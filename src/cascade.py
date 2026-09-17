@@ -132,7 +132,7 @@ def plot_accuracy_vs_cost(results: list[dict], refs: dict, path: Path,
 
     ax.set_xlabel("cost per 500 decisions (USD, measured — lower is better)")
     ax.set_ylabel("accuracy (%) — higher is better")
-    ax.set_title("Accuracy vs cost on 500 Banking77 examples\n"
+    ax.set_title(f"Accuracy vs cost on 500 {task_label} examples\n"
                  "escalating to DeepSeek only when Jev's confidence is low",
                  fontsize=12)
     ax.set_xlim(0, max(xs + [refs["frontier_cost"]]) * 1.16)

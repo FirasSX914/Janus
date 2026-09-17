@@ -1,18 +1,32 @@
 # calibre
 
-> **Jev says it's 100% sure. Is it?** On 500 Banking77 examples, it's right 95.8% of
-> the time — and DeepSeek gives the identical answer on every one of those 238 cases.
+> **Jev says it's 100% sure. Is it?** On 500 Banking77 examples it is right 95.8% of
+> the time. On 500 Web of Science abstracts, 76.7%.
 >
-> Routing on that signal reaches **80.2% accuracy at $0.1033 per 500 decisions**,
-> versus 78.8% at $0.2207 for DeepSeek alone.
+> Routing on that signal reaches **80.2% at $0.1033 per 500 decisions** on Banking77,
+> against 78.8% at $0.2207 for DeepSeek V4-Pro alone. On Web of Science the same
+> routing **ties Jev alone — 52.8% either way — for 46% more money**.
+>
+> **Two datasets, opposite outcomes. Nothing measured on the first carried over to
+> the second.**
 
 ![Accuracy vs cost on 500 Banking77 examples. Each blue dot is one confidence threshold. Jev alone sits at 77.8% for $0.051, DeepSeek alone at 78.8% for $0.221, and routing at threshold 0.67 reaches 80.2% for $0.103 with 58 DeepSeek calls.](results/figures/accuracy_vs_cost.png)
 
 ## TL;DR
 
+**Banking77** — 500 examples, 77 intent classes:
+
 - **Jev alone:** 77.8% accuracy at $0.0507 / 500 decisions.
 - **DeepSeek alone:** 78.8% accuracy at $0.2207 / 500 decisions.
 - **Jev → DeepSeek at 0.67:** 80.2% accuracy at $0.1033 / 500 decisions, with DeepSeek called on 11.6% of requests.
+
+**Web of Science** — 500 abstracts, 145 subject classes:
+
+- **Jev alone:** 52.8% accuracy at $0.1006 / 500 decisions.
+- **DeepSeek alone:** 49.2% accuracy at $0.7355 / 500 decisions.
+- **Jev → DeepSeek at 0.37:** 52.8% accuracy at $0.1474 / 500 decisions, with DeepSeek called on 2.4% of requests — the same accuracy as Jev alone, for more money.
+
+[Jump to the second dataset](#second-dataset-web-of-science) · [what transfers between them](#what-transfers-between-the-two-datasets)
 
 This repository measures the calibration of [TypeSafe](https://docs.typesafe.ai/)'s
 Jev decision model and evaluates **confidence-based routing**: a Jev → fallback
@@ -24,7 +38,7 @@ The protocol was frozen before any result was looked at
 ([commit `2384a6b`](../../commit/2384a6b)). The dataset, the raw results and the
 analysis code are all in this repository.
 
-## Results
+## Results — Banking77
 
 500 examples from the Banking77 test split, 77 intent labels, one call per example.
 
@@ -49,7 +63,125 @@ hourly rate in force at the time of each call.
 The oracle counts an example as correct when either model got it right. It is the
 ceiling of this cascade, not of the task.
 
-## Calibration
+## Second dataset: Web of Science
+
+Same pipeline, same metrics, same guard rails, same pre-registered targets. Only the
+dataset changes: 500 abstracts from the WOS-46985 corpus, 145 subject classes across
+7 parent domains, against Banking77's 77 intent classes.
+
+![Accuracy vs cost on 500 Web of Science abstracts. The routing curve falls as cost rises: Jev alone sits at 52.8% for $0.101, the 0.37 threshold at the same 52.8% for $0.147, and DeepSeek alone at 49.2% for $0.735.](results/figures/accuracy_vs_cost_wos.png)
+
+| Strategy | Accuracy | Cost / 500 | DeepSeek calls |
+|---|---|---|---|
+| Jev only | 52.8% | $0.1006 | 0 |
+| DeepSeek V4-Pro only | 49.2% | $0.7355 | 500 |
+| Cascade @ 0.37 | 52.8% | $0.1474 | 12 (2.4%) |
+| Oracle | 56.0% | — | — |
+
+**The cascade loses on this dataset.** It reaches 52.8%, which is exactly what Jev
+alone reaches, and it costs $0.1474 against $0.1006 — **46% more for the same
+accuracy**. This is not a neutral outcome: paying more for no gain is a worse
+operating point than not routing at all. On Banking77 the same rule gained 1.4 points
+for roughly half the cost of the fallback. **Without measuring on your own data, you
+cannot tell which of the two situations you are in.**
+
+The threshold was not chosen by hand on either dataset. It falls out of the sweep over
+every observed confidence level, and 0.37 is simply where accuracy peaks here.
+
+### Pre-registered targets
+
+| Target | Status | Best threshold reached |
+|---|---|---|
+| 90% | **unattainable** | 0.37 → 52.8% (−37.2 points) |
+| 95% | **unattainable** | 0.37 → 52.8% (−42.2 points) |
+| 98% | **unattainable** | 0.37 → 52.8% (−45.2 points) |
+
+The targets were fixed before any frontier run and are not revised. On Banking77 they
+were already out of reach because the fallback itself reached only 78.8%; here the
+fallback reaches 49.2%.
+
+### Calibration
+
+![Calibration on Web of Science: reported confidence against empirical accuracy by tier, with 95% Wilson intervals. The 1.00 atom holds 129 of 500 rows at 76.7% accuracy.](results/figures/calibration_wos.png)
+
+Every tier again sits below the diagonal. The saturated level holds **25.8% of the
+traffic at 76.7% accuracy**, where on Banking77 it held 47.6% at 95.8%.
+
+![Risk-coverage on Web of Science: five reachable operating points with 95% Wilson intervals, from 26% coverage at 76.7% accuracy down to full coverage at 52.8%.](results/figures/risk_coverage_wos.png)
+
+Over the 371 rows outside the saturated level, the paired bootstrap separates none of
+the four statistics — all three differences against `confidence` span zero, where on
+Banking77 two of them excluded it.
+
+| Statistic | AUROC | Difference vs `confidence` (95% CI) |
+|---|---|---|
+| `confidence` | 0.690 | — |
+| `entropy_norm` | 0.697 | −0.008 [−0.023, +0.006] |
+| `margin_top2` | 0.681 | +0.009 [−0.000, +0.018] |
+| `ratio_top2` | 0.677 | +0.013 [−0.001, +0.025] |
+
+### Ground truth on this dataset is weaker, and it matters here
+
+**This reservation carries as much weight as the result above.** The WOS categories
+come from publication metadata, not from an annotator who read each abstract, and the
+taxonomy is hierarchical, so many classes are near-synonyms inside one parent domain.
+
+Of the 220 errors both models make, **57.3% stay inside the gold's own parent domain**.
+The most frequent shared (gold → prediction) pairs are defensible answers rather than
+plain mistakes:
+
+```
+6  biochemistry/Southern blotting   → biochemistry/Molecular biology
+4  biochemistry/Northern blotting   → biochemistry/Molecular biology
+4  ECE/Electric motor               → ECE/Control engineering
+3  Medical/Polycythemia Vera        → Medical/Cancer
+2  Psychology/Person perception     → Psychology/Social cognition
+```
+
+Southern blotting *is* molecular biology; polycythemia vera *is* a blood cancer. **The
+52.8% accuracy and the 56.0% oracle may reflect the weakness of the labels as much as
+the difficulty of the task**, and this repository does not separate the two. The
+Banking77 numbers carry the same caveat in milder form, and `data/README.md` states
+both in full.
+
+### Cost of the run
+
+$0.8361 in total — **$0.7355 for DeepSeek and $0.1006 for Jev**. The cache hit rate
+fell to 92.1% from Banking77's 97.9%, since the variable part of the prompt grew from
+a few words to a full abstract; billing the input without separating cache hits from
+misses would have read $1.9964 instead.
+
+## What transfers between the two datasets
+
+Nothing measured on Banking77 predicted Web of Science.
+
+| | Banking77 | Web of Science |
+|---|---|---|
+| classes | 77 | 145 |
+| accuracy, Jev | 77.8% | 52.8% |
+| accuracy, DeepSeek | 78.8% | 49.2% |
+| **gap, Jev − DeepSeek** | **−1.0 pt** (frontier ahead) | **+3.6 pt** (Jev ahead) |
+| oracle | 83.2% | 56.0% |
+| share of traffic at the 1.00 level | 47.6% | 25.8% |
+| accuracy at the 1.00 level | 95.8% | 76.7% |
+| **optimal threshold** | **0.67** | **0.37** |
+| accuracy at that threshold | 80.2% | 52.8% |
+| escalated at that threshold | 11.6% | 2.4% |
+| cost at that threshold | $0.1033 | $0.1474 |
+| best single model | 78.8% | 52.8% |
+| **cascade beats it?** | **yes, +1.4 pt** | **no, +0.0 pt** |
+| derived statistics vs `confidence` | two intervals excluded zero | all three span zero |
+
+The sign of the accuracy gap between the two models reverses. The optimal threshold
+moves from 0.67 to 0.37. The saturated confidence level halves in size and loses 19
+points of accuracy. The cascade goes from beating the better single model to matching
+it at higher cost. None of these were predictable from the first dataset.
+
+METHOD.md recorded, before any of this was run, that a threshold far from 0.67 would
+be a result rather than a failure, and that a negative result publishes as a positive
+one does.
+
+## Calibration — Banking77
 
 `confidence` is not a probability of being right. It is a statistic derived from
 the shape of the probability distribution, and measuring what it actually predicts
@@ -100,7 +232,7 @@ bootstrap intervals exclude zero for the `margin_top2` and `ratio_top2` differen
 but the observed differences are small. The alternatives were not pre-registered with
 a minimum margin to beat, so this is an absence of improvement, not a reversal.
 
-## Agreement between the two models
+## Agreement between the two models — Banking77
 
 | | Count | Share |
 |---|---|---|
@@ -120,31 +252,43 @@ identical prediction in 238 out of 238 cases.
 
 ## Limitations
 
-**One dataset, 500 examples, one domain.** Banking77 intent classification, in
-English. Nothing here establishes behaviour on other tasks, other languages or
-other label sets. A second dataset is in progress; generalisation is not
-demonstrated.
+**Two datasets, 500 examples each, both in English.** Banking77 intent
+classification and Web of Science subject classification. Nothing here establishes
+behaviour on other tasks, other languages or other label sets. Two datasets show
+that the parameters do not transfer between *these two*; they do not establish how
+they behave on a third.
 
-**The 0.67 threshold is observed in this data, not a constant of the mechanism.**
-It is where accuracy peaks on these 500 examples. It should be re-derived on any
-new workload rather than copied.
+**Neither threshold is a constant of the mechanism.** 0.67 is where accuracy peaks
+on Banking77, 0.37 on Web of Science. Both are observations about their own 500
+examples. A threshold must be re-derived on any new workload, never copied from
+here.
 
-**The pre-registered targets are unreachable.** 90%, 95% and 98% were fixed before
-the frontier run. DeepSeek V4-Pro alone reaches 78.8%, so all three were beyond the
-fallback itself, whatever the routing rule. That is a design fault in the protocol
+**Whether routing pays is itself dataset-dependent.** It gained 1.4 points for
+about half the cost of the fallback on Banking77, and gained nothing for 46% more
+than Jev alone on Web of Science. Both outcomes came out of the identical
+pipeline.
+
+**The pre-registered targets are unreachable on both datasets.** 90%, 95% and 98%
+were fixed before any frontier run. DeepSeek V4-Pro alone reaches 78.8% on
+Banking77 and 49.2% on Web of Science, so all three were beyond the fallback
+itself, whatever the routing rule. That is a design fault in the protocol
 — the targets were set with no known upper bound — and it is reported rather than
 corrected. The targets are not revised.
 
-**The oracle belongs to this pair of models, not to the dataset.** On 84 of the 500,
-neither Jev nor DeepSeek has the right answer, which caps this cascade at 83.2%. A
-different fallback could recover some of those; the ceiling would move.
+**The oracle belongs to this pair of models, not to the dataset.** On 84 of the 500
+Banking77 examples and 220 of the 500 Web of Science abstracts, neither model has
+the right answer, capping the cascade at 83.2% and 56.0% respectively. A different
+fallback could recover some of those; the ceilings would move.
 
-**The 84 common errors span 47 distinct (gold, prediction) pairs**, the most frequent
-accounting for 4 cases. They fall mostly between semantically adjacent classes —
-`order_physical_card` → `get_physical_card`, `card_delivery_estimate` →
-`card_arrival`, `top_up_reverted` → `top_up_failed`. **How much of this is label
-ambiguity in Banking77 rather than model error has not been established**, and this
-repository does not attempt to.
+**Common errors fall mostly between semantically adjacent classes on both
+datasets.** On Banking77, 47 distinct (gold, prediction) pairs across 84 errors:
+`order_physical_card` to `get_physical_card`, `card_delivery_estimate` to
+`card_arrival`. On Web of Science, 57.3% of the 220 shared errors stay inside the
+parent domain of the gold label, with pairs like `Southern blotting` to
+`Molecular biology` that are defensible answers. **How much of this is label
+ambiguity rather than model error has not been established on either dataset**, and
+this repository does not attempt to. It weighs heavier on Web of Science, whose
+labels come from publication metadata rather than per-document annotation.
 
 **The frontier baseline is DeepSeek V4-Pro.** Claude Opus 5 is announced for v2; the
 provider interface is in place and the protocol is frozen, so it is a run to launch,
@@ -159,7 +303,8 @@ Gemini both return an alias rather than a resolved version, unlike Jev's
 
 ## Reproduction
 
-Total cost of a full reproduction: **~$0.27** — $0.0507 for Jev, $0.2207 for DeepSeek.
+Total cost of a full reproduction: **~$1.11** — $0.2714 for Banking77 ($0.0507 Jev,
+$0.2207 DeepSeek) and $0.8361 for Web of Science ($0.1006 Jev, $0.7355 DeepSeek).
 
 ```bash
 pip install typesafe-sdk openai numpy matplotlib
@@ -169,23 +314,37 @@ TYPESAFE_API_KEY=...
 DEEPSEEK_API_KEY=...
 EOF
 
-python src/probe.py                             # one call, prints the raw response
-python src/prepare_data.py                      # rebuilds data/banking77_500.jsonl
-python src/run_jev.py                           # 500 calls, ~$0.051
-python src/run_frontier.py --provider deepseek  # 500 calls, ~$0.221
-python src/analyze.py                           # calibration + risk-coverage, writes figures
-python src/cascade.py                           # cascade table + figure, no API call
+python src/probe.py            # one call, prints the raw response
+
+# Banking77
+python src/prepare_data.py                                       # rebuilds the dataset
+python src/run_jev.py      --task banking77                      # 500 calls, ~$0.051
+python src/run_frontier.py --task banking77 --provider deepseek  # 500 calls, ~$0.221
+python src/analyze.py      --task banking77
+python src/cascade.py      --task banking77
+
+# Web of Science
+python src/prepare_data_wos.py                                   # downloads ~60 MB
+python src/run_jev.py      --task wos                            # 500 calls, ~$0.101
+python src/run_frontier.py --task wos --provider deepseek        # 500 calls, ~$0.736
+python src/analyze.py      --task wos
+python src/cascade.py      --task wos
 ```
+
+The runners take `--task`; no dataset is hard-coded in them.
 
 Both runners write one line at a time, resume on the ids already present, and refuse
 to resume when an existing line carries a different `prompt_hash` — two prompt
 versions can never share a file.
 
-The dataset is committed with its hashes, so a re-download that drifts is detectable:
+Both datasets are committed with their hashes, so a re-download that drifts is
+detectable:
 
 ```
-sha256(test.csv)              d12d6e3bc4c3103966ae786dc435913c0c563dfa328f5a3646d0e62cfeeb474d
+sha256(banking77 test.csv)    d12d6e3bc4c3103966ae786dc435913c0c563dfa328f5a3646d0e62cfeeb474d
 sha256(banking77_500.jsonl)   33547bc2c3453057fbeb50cc5cb68da32c6da3c1b79b5deae47567c20fcf0bb6
+sha256(WOS archive)           b787d484bff88b0dcdb3fa291d06ec9d2f025dc2a67ce1045d0c688cd96ccf8a
+sha256(wos_500.jsonl)         23954a60f8ac255bdff021f006aa625b9d8742723d8afe5d53110ebe74fc131c
 ```
 
 `analyze.py` and `cascade.py` never call an API. They read `results/raw/` and compute.
@@ -193,18 +352,21 @@ sha256(banking77_500.jsonl)   33547bc2c3453057fbeb50cc5cb68da32c6da3c1b79b5deae4
 ## Layout
 
 ```
-src/probe.py          one call, prints the raw unparsed response
-src/labels.py         the 77 labels, id -> name -> description, shared by all runners
-src/prepare_data.py   builds the frozen dataset
-src/run_jev.py        Jev on the 500 -> JSONL
-src/providers.py      frontier backends behind one interface
-src/run_frontier.py   frontier on the 500 -> JSONL
-src/analyze.py        calibration, risk-coverage, figures
-src/cascade.py        cascade simulation, zero API calls
-data/                 frozen dataset + provenance
-results/raw/          raw JSONL, one line per example
-results/figures/      figures, regenerated by analyze.py and cascade.py
-docs/METHOD.md        protocol, measured constraints, related work
+src/probe.py             one call, prints the raw unparsed response
+src/tasks.py             task registry: name -> labels module + data file
+src/labels.py            Banking77, 77 labels, id -> name -> description
+src/labels_wos.py        Web of Science, 145 classes, plus each parent domain
+src/prepare_data.py      builds the frozen Banking77 dataset
+src/prepare_data_wos.py  builds the frozen Web of Science dataset
+src/run_jev.py           Jev on a task's 500 -> JSONL
+src/providers.py         frontier backends behind one interface
+src/run_frontier.py      a frontier backend on a task's 500 -> JSONL
+src/analyze.py           calibration, risk-coverage, figures
+src/cascade.py           cascade simulation, zero API calls
+data/                    frozen datasets + provenance
+results/raw/             raw JSONL, one line per example
+results/figures/         figures, regenerated by analyze.py and cascade.py
+docs/METHOD.md           protocol, measured constraints, related work
 ```
 
 Both figures are produced from the committed raw results by the scripts above. None

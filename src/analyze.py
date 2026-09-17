@@ -396,31 +396,35 @@ def plot_calibration(tier_rows: list[tuple], records: list[dict], path: Path) ->
 
 
 def plot_risk_coverage(rows: list[tuple], path: Path) -> None:
-    coverage = [r[2] for r in rows]
-    accuracy = [r[4] for r in rows]
-    los = [r[4] - r[5] for r in rows]
-    his = [r[6] - r[4] for r in rows]
-    labels = [f"{r[0]:.2f}" for r in rows]
+    """Points de fonctionnement atteignables, un par palier.
 
-    fig, ax = plt.subplots(figsize=(7.5, 6))
-    # Points non relies : chaque palier est un point de fonctionnement atteignable,
-    # rien n'est defini entre deux paliers et un trait le laisserait croire.
-    ax.errorbar(coverage, accuracy, yerr=[los, his], fmt="o", markersize=7,
+    Points non relies : rien n'est defini entre deux paliers et un trait le
+    laisserait croire. Fond blanc explicite, comme les autres figures.
+    """
+    coverage = [r[2] for r in rows]
+    accuracy = [r[4] * 100 for r in rows]
+    los = [(r[4] - r[5]) * 100 for r in rows]
+    his = [(r[6] - r[4]) * 100 for r in rows]
+
+    fig, ax = plt.subplots(figsize=(9, 5.6), facecolor="white")
+    ax.set_facecolor("white")
+    ax.errorbar(coverage, accuracy, yerr=[los, his], fmt="o", markersize=8,
                 capsize=4, linewidth=1.5, linestyle="none", color="#1f4e79",
-                label="palier (IC Wilson 95 %)")
-    for x, y, label, row in zip(coverage, accuracy, labels, rows):
+                label="confidence tier (95% Wilson)")
+    for x, y, row in zip(coverage, accuracy, rows):
         right = x > 0.92
-        ax.annotate(f"seuil {label}\nN={row[1]}", (x, y), textcoords="offset points",
-                    xytext=(-10 if right else 10, 8), fontsize=8, color="0.25",
+        ax.annotate(f"threshold {row[0]:.2f}\nN={row[1]}", (x, y),
+                    textcoords="offset points",
+                    xytext=(-12 if right else 12, 8), fontsize=9, color="0.25",
                     ha="right" if right else "left")
-    ax.set_xlabel("coverage : part des exemples traites")
-    ax.set_ylabel("selective accuracy sur la zone couverte")
-    ax.set_title("Risk-coverage : points de fonctionnement par palier")
-    ax.set_xlim(min(coverage) - 0.08, 1.08)
+    ax.set_xlabel("coverage — share of requests answered by Jev alone")
+    ax.set_ylabel("accuracy (%) on the covered share")
+    ax.set_title("Risk-coverage — reachable operating points")
+    ax.set_xlim(min(coverage) - 0.09, 1.1)
     ax.grid(alpha=0.3)
-    ax.legend(loc="lower left", fontsize=9)
+    ax.legend(loc="lower left", fontsize=9, framealpha=1.0)
     fig.tight_layout()
-    fig.savefig(path, dpi=150)
+    fig.savefig(path, dpi=200, facecolor="white")
     plt.close(fig)
 
 
