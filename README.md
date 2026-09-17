@@ -1,6 +1,18 @@
 # calibre
 
-On Banking77, routing on Jev's confidence reaches 80.2% accuracy at $0.103 per 500 decisions — higher accuracy than DeepSeek V4-Pro alone (78.8%) at 53% lower cost.
+> **Jev says it's 100% sure. Is it?** On 500 Banking77 examples, it's right 95.8% of
+> the time — and DeepSeek gives the identical answer on every one of those 238 cases.
+>
+> Routing on that signal reaches **80.2% accuracy at $0.1033 per 500 decisions**,
+> versus 78.8% at $0.2207 for DeepSeek alone.
+
+![Accuracy vs cost on 500 Banking77 examples. Each blue dot is one confidence threshold. Jev alone sits at 77.8% for $0.051, DeepSeek alone at 78.8% for $0.221, and routing at threshold 0.67 reaches 80.2% for $0.103 with 58 DeepSeek calls.](results/figures/accuracy_vs_cost.png)
+
+## TL;DR
+
+- **Jev alone:** 77.8% accuracy at $0.0507 / 500 decisions.
+- **DeepSeek alone:** 78.8% accuracy at $0.2207 / 500 decisions.
+- **Jev → DeepSeek at 0.67:** 80.2% accuracy at $0.1033 / 500 decisions, with DeepSeek called on 11.6% of requests.
 
 This repository measures the calibration of [TypeSafe](https://docs.typesafe.ai/)'s
 Jev decision model and evaluates **confidence-based routing**: a Jev → fallback
@@ -13,8 +25,6 @@ The protocol was frozen before any result was looked at
 analysis code are all in this repository.
 
 ## Results
-
-![Accuracy vs cost for confidence-based routing on Banking77. Each dot is one confidence threshold; the star marks the 0.67 threshold at 80.2% for $0.103.](results/figures/accuracy_vs_cost.png)
 
 500 examples from the Banking77 test split, 77 intent labels, one call per example.
 

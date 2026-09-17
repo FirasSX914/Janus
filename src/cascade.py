@@ -100,18 +100,24 @@ def plot_accuracy_vs_cost(results: list[dict], refs: dict, path: Path) -> None:
     xs = [s["cost"] for s in results]
     ys = [s["accuracy"] * 100 for s in results]
     ax.scatter(xs, ys, s=26, color="#1f4e79", alpha=0.75, zorder=3,
-               label="cascade, one point per confidence threshold")
+               label="routing — one point per confidence threshold")
 
+    # Libelles explicites : la figure doit se lire sans avoir ouvert METHOD.md.
     ax.axhline(refs["oracle"] * 100, linestyle="--", linewidth=1.4, color="#7a7a7a",
-               zorder=2, label=f"oracle ceiling — {refs['oracle']*100:.1f}%")
+               zorder=2,
+               label=f"ceiling — {refs['oracle']*100:.1f}% (best possible if either model is right)")
     ax.scatter([refs["jev_cost"]], [refs["jev_acc"] * 100], s=150, marker="s",
-               color="#2e7d32", zorder=5, label="Jev only")
+               color="#2e7d32", zorder=5,
+               label=f"Jev alone — {refs['jev_acc']*100:.1f}%, ${refs['jev_cost']:.3f}")
     ax.scatter([refs["frontier_cost"]], [refs["frontier_acc"] * 100], s=150, marker="^",
-               color="#b3541e", zorder=5, label="DeepSeek V4-Pro only")
+               color="#b3541e", zorder=5,
+               label=f"DeepSeek alone — {refs['frontier_acc']*100:.1f}%, ${refs['frontier_cost']:.3f}")
 
     best = max(results, key=lambda s: s["accuracy"])
     ax.scatter([best["cost"]], [best["accuracy"] * 100], s=230, marker="*",
-               color="#c62828", zorder=6, label=f"cascade @ {best['threshold']:.2f}")
+               color="#c62828", zorder=6,
+               label=f"Jev → DeepSeek at {best['threshold']:.2f} — "
+                     f"{best['accuracy']*100:.1f}%, ${best['cost']:.3f}")
     ax.annotate(
         f"threshold {best['threshold']:.2f}\n{best['accuracy']*100:.1f}% "
         f"for ${best['cost']:.3f}\n{best['n_escalated']} DeepSeek calls",
@@ -121,9 +127,11 @@ def plot_accuracy_vs_cost(results: list[dict], refs: dict, path: Path) -> None:
                   edgecolor="#c62828", linewidth=0.9),
     )
 
-    ax.set_xlabel("cost per 500 decisions (USD, measured)")
-    ax.set_ylabel("accuracy (%)")
-    ax.set_title("Accuracy vs cost — confidence-based routing on Banking77")
+    ax.set_xlabel("cost per 500 decisions (USD, measured — lower is better)")
+    ax.set_ylabel("accuracy (%) — higher is better")
+    ax.set_title("Accuracy vs cost on 500 Banking77 examples\n"
+                 "escalating to DeepSeek only when Jev's confidence is low",
+                 fontsize=12)
     ax.set_xlim(0, max(xs + [refs["frontier_cost"]]) * 1.16)
     ax.grid(alpha=0.3, zorder=0)
     # Coin haut-droit : le seul quadrant vide. En bas a droite la legende
