@@ -41,14 +41,21 @@ Voir « Le run frontier ».
 
 ## Le protocole de questionnement
 
-Une question `Choice` par exemple, à **exactement 77 options**, une par label du
-dataset. Instructions et critères viennent de `src/labels.py`, importé à
-l'identique par les deux runners. Ni l'ordre des options ni la formulation des
-critères ne doivent différer entre `run_jev.py` et `run_frontier.py` : c'est le
-point de rupture le plus probable de la comparaison, parce qu'il produirait un
-écart de performance imputable au prompt et non aux modèles. Un seul module
-partagé rend la divergence impossible sans édition délibérée, et tout changement
-déplace le `prompt_hash` des deux runs.
+Une question `Choice` par exemple, à **exactement autant d'options que la tâche a
+de classes** — 77 pour Banking77, 145 pour WOS-46985 — une par label du dataset.
+Instructions et critères viennent du module de labels de la tâche
+(`src/labels.py`, `src/labels_wos.py`), importé à l'identique par les deux
+runners via `src/tasks.py`. Ni l'ordre des options ni la formulation des critères
+ne doivent différer entre `run_jev.py` et `run_frontier.py` : c'est le point de
+rupture le plus probable de la comparaison, parce qu'il produirait un écart de
+performance imputable au prompt et non aux modèles. Un seul module partagé rend
+la divergence impossible sans édition délibérée, et tout changement déplace le
+`prompt_hash` des deux runs de cette tâche.
+
+Les runners ne connaissent aucun dataset : ils prennent `--task` et lisent dans
+`tasks.py` le chemin des données, les instructions et les critères. Ajouter un
+dataset est une entrée dans le registre plus deux fichiers, jamais une copie de
+runner — ce qui évite qu'un correctif s'applique à l'un et pas à l'autre.
 
 ### Pas d'option `other`
 
@@ -79,8 +86,8 @@ PROMPT_HASH = hashlib.sha256(
 ```
 
 - `INSTRUCTIONS` : la chaîne d'instructions de la question.
-- `CRITERIA` : les 77 couples nom → description, **dans l'ordre d'envoi**, qui est
-  celui des ids du dataset. Pas de `sort_keys` : réordonner les options change le
+- `CRITERIA` : les couples nom → description de la tâche, **dans l'ordre
+  d'envoi**, qui est celui des ids du dataset. Pas de `sort_keys` : réordonner les options change le
   corps de la requête, donc doit changer le hash.
 - Sérialisation JSON compacte (`separators=(",", ":")`), sans échappement ASCII,
   encodée en UTF-8.
@@ -347,6 +354,11 @@ soit possible :
 | 1729 | bootstrap apparié des AUROC |
 | 8191 | rodage aléatoire des backends frontier |
 
+La graine **42** sert au sous-échantillonnage de *chaque* dataset, et **8191** au
+rodage de *chaque* dataset : les graines sont attachées à un rôle, pas à un
+dataset. Deux datasets différents tirés avec la même graine produisent des
+échantillons différents, puisque la population diffère.
+
 ### Ce que le rodage sert à valider
 
 Le rodage valide la **mécanique** : que le structured output contraigne
@@ -556,6 +568,59 @@ seuil qui en sort est lu tel quel.
 Symétriquement : si la cascade ne dépasse pas le fallback seul sur ce dataset,
 c'est rapporté ainsi. Un résultat négatif se publie exactement comme un positif,
 et rien n'est réajusté après avoir vu les chiffres.
+
+### Le dataset retenu : Web of Science WOS-46985
+
+> This experiment uses the internally consistent (Domain, area) taxonomy from the
+> dataset metadata (145 classes), rather than Y.txt's 134-class index mapping,
+> because the latter cannot be mapped unambiguously to class names. Published
+> WOS-46985 benchmark figures therefore are not treated as directly comparable
+> external baselines.
+
+Les faits qui imposent ce choix, relevés dans l'archive elle-même :
+
+- **Les trois systèmes de labels de l'archive se contredisent** : `Y.txt` donne
+  134 classes, les couples `(YL1, YL2)` en donnent 133, le `Meta-data` en donne
+  145. Le `ReadMe.txt` annonce 134.
+- **La correspondance indice → nom de `Y.txt` est ambiguë sur 10 valeurs.**
+  `Y = 40` correspond à la fois à `Medical/Depression` et `Psychology/Depression` ;
+  `Y = 71` correspond à trois classes `Civil` distinctes. Sans noms lisibles, pas
+  de prompt possible.
+- **`Depression` et `Schizophrenia` existent sous deux domaines**, ce qui impose
+  le couple `Domain/area` comme clé : l'aire seule n'identifie pas une classe.
+- **Effectifs très inégaux** : de 1 à 750 exemples par classe, médiane 359. Sur
+  un tirage uniforme de 500 on attend ~3,4 exemples par classe contre 6,5 pour
+  Banking77, donc la plupart des classes rares sont absentes — 134 des 145
+  classes apparaissent dans l'échantillon.
+- **Licence double** : CC BY 4.0 sur Mendeley, plus une concession de type MIT
+  dans le `ReadMe.txt` de l'archive, copyright Kamran Kowsari 2017.
+
+Aucun filtrage n'est appliqué pour retomber sur les 134 canoniques. Retirer les
+11 classes de moins de 50 exemples y suffirait exactement — et c'est précisément
+pour cela qu'on ne le fait pas : choisir un seuil parce qu'il reproduit le
+chiffre attendu est l'ajustement *post-hoc* que le protocole s'interdit.
+
+La vérité terrain est **plus faible que celle de Banking77** : les catégories
+viennent des métadonnées de publication, pas d'un annotateur ayant lu chaque
+résumé. Détaillé dans `data/README.md`.
+
+### Ventilation des erreurs par domaine parent
+
+Ajout **spécifique à ce dataset**, pour la raison suivante : la taxonomie est
+hiérarchique à 7 parents et beaucoup de classes sont quasi synonymes à
+l'intérieur d'un même parent. Confondre `CS/Machine learning` avec
+`CS/Algorithm design` n'est pas la même erreur que la confondre avec
+`Medical/Psoriasis`.
+
+`cascade.py` rapporte donc, sur les erreurs communes aux deux modèles, combien
+restent **dans le même domaine parent** que le gold et combien **le traversent**,
+avec la même ventilation sur l'ensemble des erreurs Jev comme référence.
+
+C'est une métrique de plus, et elle sert exactement au même usage que les paires
+`(gold, prediction)` sur Banking77 : **interpréter** les erreurs communes, en
+particulier estimer la part imputable à l'ambiguïté de la taxonomie. Elle
+**n'entre pas** dans la mesure du seuil, ni dans la table de cascade, ni dans la
+calibration. Le protocole de mesure est inchangé.
 
 ### Le `prompt_hash` sera différent, et c'est normal
 

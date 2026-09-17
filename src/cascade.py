@@ -24,9 +24,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
+import tasks
+
 ROOT = Path(__file__).resolve().parent.parent
-JEV_PATH = ROOT / "results" / "raw" / "jev_banking77_500.jsonl"
-FRONTIER_PATH = ROOT / "results" / "raw" / "deepseek_banking77_500.jsonl"
 FIG_DIR = ROOT / "results" / "figures"
 
 # Jev : 42 $/Btok sur les tokens d'entree, sortie gratuite (docs.typesafe.ai/models).
@@ -44,11 +44,13 @@ TIERS = (
 )
 
 
-def load() -> list[dict]:
+def load(task, frontier_provider: str) -> list[dict]:
+    jev_path = task.out_path("jev")
+    frontier_path = task.out_path(frontier_provider)
     jev = {json.loads(l)["id"]: json.loads(l)
-           for l in JEV_PATH.read_text(encoding="utf-8").splitlines() if l.strip()}
+           for l in jev_path.read_text(encoding="utf-8").splitlines() if l.strip()}
     frontier = {json.loads(l)["id"]: json.loads(l)
-                for l in FRONTIER_PATH.read_text(encoding="utf-8").splitlines() if l.strip()}
+                for l in frontier_path.read_text(encoding="utf-8").splitlines() if l.strip()}
     assert set(jev) == set(frontier), "les deux runs ne couvrent pas les memes ids"
     rows = []
     for i in sorted(jev):
@@ -86,7 +88,8 @@ def simulate(rows: list[dict], threshold: float) -> dict:
     }
 
 
-def plot_accuracy_vs_cost(results: list[dict], refs: dict, path: Path) -> None:
+def plot_accuracy_vs_cost(results: list[dict], refs: dict, path: Path,
+                          task_label: str) -> None:
     """Accuracy vs cout, un point par seuil du balayage.
 
     Echelle de cout LINEAIRE : une echelle log rendrait la comparaison de couts
@@ -144,10 +147,14 @@ def plot_accuracy_vs_cost(results: list[dict], refs: dict, path: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--task", choices=sorted(tasks.TASKS), default="banking77")
+    parser.add_argument("--frontier", default="deepseek",
+                        help="prefixe du fichier de resultats frontier")
     parser.add_argument("--errors-top", type=int, default=10)
-    parser.parse_args()
+    args = parser.parse_args()
 
-    rows = load()
+    task = tasks.load(args.task)
+    rows = load(task, args.frontier)
     n = len(rows)
     jev_cost = sum(r["jev_cost"] for r in rows)
     frontier_cost = sum(r["frontier_cost"] for r in rows)
@@ -230,6 +237,24 @@ def main() -> None:
     for r in diff:
         print(f"  {r['id']:>5}  {r['gold'][:38]:<38} {r['jev_pred'][:28]:<28} {r['frontier_pred']}")
 
+    if task.parents:
+        print()
+        print("  Ventilation par domaine parent :")
+        inside = [r for r in common
+                  if task.parents.get(r["gold"]) == task.parents.get(r["jev_pred"])]
+        across = [r for r in common if r not in inside]
+        print(f"    meme parent que le gold  : {len(inside):>4} "
+              f"({len(inside)/len(common)*100:>5.1f} %)")
+        print(f"    parent different         : {len(across):>4} "
+              f"({len(across)/len(common)*100:>5.1f} %)")
+        print("    (sur la prediction de Jev ; ne sert qu'a interpreter les erreurs,")
+        print("     n'entre pas dans la mesure du seuil)")
+        all_errors = [r for r in rows if not r["jev_ok"]]
+        inside_all = sum(1 for r in all_errors
+                         if task.parents.get(r["gold"]) == task.parents.get(r["jev_pred"]))
+        print(f"    pour reference, sur les {len(all_errors)} erreurs Jev : "
+              f"{inside_all} meme parent, {len(all_errors)-inside_all} parent different")
+
     print()
     print("=" * 96)
     print("4. DESACCORDS : DISTRIBUTION DE LA CONFIDENCE JEV")
@@ -250,12 +275,13 @@ def main() -> None:
               f"{b:>7} ({b/max(len(ds_right),1)*100:>4.1f}%) | {a+b:>4} / {base}")
 
     FIG_DIR.mkdir(parents=True, exist_ok=True)
-    out = FIG_DIR / "accuracy_vs_cost.png"
+    out = FIG_DIR / (f"accuracy_vs_cost.png" if task.name == "banking77"
+                     else f"accuracy_vs_cost_{task.name}.png")
     plot_accuracy_vs_cost(results, {
         "jev_acc": jev_ok / n, "jev_cost": jev_cost,
         "frontier_acc": frontier_ok / n, "frontier_cost": frontier_cost,
         "oracle": oracle_ok / n,
-    }, out)
+    }, out, {"banking77": "Banking77", "wos": "Web of Science"}.get(task.name, task.name))
     print()
     print("=" * 96)
     print("FIGURE")

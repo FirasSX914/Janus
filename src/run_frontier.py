@@ -1,15 +1,13 @@
-"""Baseline frontier sur les 500 exemples de Banking77 -> results/raw/.
+"""Baseline frontier sur les 500 exemples d'une tache -> results/raw/.
 
-Le backend est choisi par --provider et vient de providers.py, qui expose une
-interface unique : call(state) -> (prediction, input_tokens, output_tokens,
-model_id). Le runner lui-meme ne connait aucun fournisseur ; ajouter Opus 5 en
-v2 ne demandera pas de le rouvrir.
+Le backend vient de --provider et de providers.py, la tache de --task et de
+tasks.py : le runner ne connait ni fournisseur ni dataset. Ajouter Opus 5 ou un
+dataset ne demande pas de le rouvrir.
 
-Meme dataset, meme mapping importe de labels.py, meme ordre et meme formulation
-des 77 criteres que run_jev.py. Le prompt_hash est calcule par la MEME formule
-que le runner Jev : les deux fichiers doivent porter un prompt_hash identique,
-et cette egalite est la preuve verifiable que les modeles ont recu le meme
-enonce.
+Pour une tache donnee, le prompt_hash est calcule par la MEME formule que le
+runner Jev : les deux fichiers de cette tache doivent porter un prompt_hash
+identique, et cette egalite est la preuve verifiable que les modeles ont recu le
+meme enonce. D'une tache a l'autre le hash differe, c'est attendu.
 
 Le frontier n'expose aucune distribution comparable : les colonnes confidence,
 probabilities, margin_top2, entropy_norm et ratio_top2 restent nulles. Elles ne
@@ -19,7 +17,6 @@ Ecriture au fil de l'eau, reprise par id, refus si le prompt_hash differe.
 """
 
 import argparse
-import hashlib
 import json
 import os
 import random
@@ -27,11 +24,10 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from labels import CRITERIA, INSTRUCTIONS
+import tasks
 from providers import PROVIDERS
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA_PATH = ROOT / "data" / "banking77_500.jsonl"
 PROGRESS_EVERY = 25
 
 for line in (ROOT / ".env").read_text(encoding="utf-8").splitlines():
@@ -39,15 +35,7 @@ for line in (ROOT / ".env").read_text(encoding="utf-8").splitlines():
         name, value = line.split("=", 1)
         os.environ.setdefault(name.strip(), value.strip())
 
-# Partie constante du prompt, identique a celle de run_jev.py et hachee par la
-# meme formule. Le rendu textuel de providers.py en derive entierement.
-PROMPT_CONSTANT = {"instructions": INSTRUCTIONS, "criteria": CRITERIA}
-PROMPT_HASH = hashlib.sha256(
-    json.dumps(PROMPT_CONSTANT, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-).hexdigest()
-
-
-def already_done(path: Path) -> set[int]:
+def already_done(path: Path, prompt_hash: str) -> set[int]:
     """Ids deja traites. Refuse la reprise si un prompt_hash differe."""
     if not path.exists():
         return set()
@@ -57,11 +45,11 @@ def already_done(path: Path) -> set[int]:
             if not line.strip():
                 continue
             record = json.loads(line)
-            if record["prompt_hash"] != PROMPT_HASH:
+            if record["prompt_hash"] != prompt_hash:
                 raise SystemExit(
                     f"Reprise refusee : {path} ligne {line_no} porte le prompt_hash\n"
                     f"  {record['prompt_hash']}\n"
-                    f"alors que le prompt courant vaut\n  {PROMPT_HASH}\n"
+                    f"alors que le prompt courant vaut\n  {prompt_hash}\n"
                     "Le protocole a change depuis ce run. Relancer dans un fichier "
                     "neuf plutot que melanger deux versions de prompt."
                 )
@@ -71,6 +59,7 @@ def already_done(path: Path) -> set[int]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--task", choices=sorted(tasks.TASKS), default="banking77")
     parser.add_argument("--provider", choices=sorted(PROVIDERS), default="gemini")
     parser.add_argument("--model", default=None, help="surcharge du modele par defaut du backend")
     parser.add_argument("--sample", type=int, default=None,
@@ -86,14 +75,11 @@ def main() -> None:
         parser.error("--sample et --seed vont ensemble : un rodage sans graine "
                      "documentee n'est pas reproductible.")
 
-    provider = PROVIDERS[args.provider](**({"model": args.model} if args.model else {}))
-    out_path = ROOT / "results" / "raw" / f"{provider.name}_banking77_500.jsonl"
-
-    examples = [
-        json.loads(line)
-        for line in DATA_PATH.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+    task = tasks.load(args.task)
+    prompt_hash = task.prompt_hash
+    provider = PROVIDERS[args.provider](task, **({"model": args.model} if args.model else {}))
+    out_path = task.out_path(provider.name)
+    examples = task.examples()
     # Le tirage porte sur les 500, AVANT de retirer les ids deja traites :
     # l'echantillon ne depend donc que de la graine, pas de l'avancement du run.
     if args.sample is not None:
@@ -102,13 +88,14 @@ def main() -> None:
         print(f"rodage      : {args.sample} ids tires au hasard, graine {args.seed}")
         print(f"              {[e['id'] for e in examples]}")
 
-    done = already_done(out_path)
+    done = already_done(out_path, prompt_hash)
     todo = [example for example in examples if example["id"] not in done]
     if args.limit is not None:
         todo = todo[: args.limit]
 
-    print(f"prompt_hash : {PROMPT_HASH}")
-    print(f"              (doit etre identique a celui du run Jev)")
+    print(f"tache       : {task.name}, {len(task.criteria)} classes")
+    print(f"prompt_hash : {prompt_hash}")
+    print(f"              (doit etre identique a celui du run Jev de la MEME tache)")
     print(f"backend     : {provider.name} / {provider.model}")
     print(f"sortie      : {out_path.name}")
     print(f"dataset     : {len(examples)} exemples, {len(done)} deja traites")
@@ -152,7 +139,7 @@ def main() -> None:
                 "ratio_top2": None,
                 "input_tokens": completion.input_tokens,
                 "latency_ms": round(latency_ms, 1),
-                "prompt_hash": PROMPT_HASH,
+                "prompt_hash": prompt_hash,
                 "run_date": when.isoformat(timespec="seconds").replace("+00:00", "Z"),
                 # Colonnes propres au frontier, absentes du run Jev dont la
                 # sortie n'est pas facturee. output_tokens inclut les tokens de

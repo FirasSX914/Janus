@@ -1,7 +1,9 @@
-"""Jev sur les 500 exemples de Banking77 -> results/raw/jev_banking77_500.jsonl.
+"""Jev sur les 500 exemples d'une tache -> results/raw/jev_<tache>_500.jsonl.
 
-Un appel par exemple, un Choice a exactement 77 options, criteres importes de
-labels.py. Ecrit au fil de l'eau : rien n'est bufferise en memoire, chaque ligne
+La tache est choisie par --task et vient de tasks.py : le runner ne connait
+aucun dataset. Un appel par exemple, un Choice a exactement autant d'options que
+la tache a de classes, criteres importes du module de labels de la tache.
+Ecrit au fil de l'eau : rien n'est bufferise en memoire, chaque ligne
 est flushee et fsyncee des qu'elle est produite, pour qu'une interruption ne
 coute que l'appel en cours.
 
@@ -14,7 +16,6 @@ Contrat des colonnes et definition du prompt_hash : docs/METHOD.md.
 """
 
 import argparse
-import hashlib
 import json
 import math
 import os
@@ -24,11 +25,9 @@ from pathlib import Path
 
 from typesafe_sdk import Choice, TypeSafeClient
 
-from labels import CRITERIA, INSTRUCTIONS
+import tasks
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA_PATH = ROOT / "data" / "banking77_500.jsonl"
-OUT_PATH = ROOT / "results" / "raw" / "jev_banking77_500.jsonl"
 MODEL = "jev-latest"
 QUESTION_ID = "intent"
 PROGRESS_EVERY = 25
@@ -37,16 +36,6 @@ for line in (ROOT / ".env").read_text(encoding="utf-8").splitlines():
     if "=" in line and not line.lstrip().startswith("#"):
         name, value = line.split("=", 1)
         os.environ.setdefault(name.strip(), value.strip())
-
-# Partie CONSTANTE du prompt : instructions + les 77 criteres, dans l'ordre
-# exact ou ils sont envoyes. Le state change a chaque exemple, donc il n'entre
-# pas dans le hash -- sinon le hash serait unique par ligne et ne detecterait
-# plus un changement de protocole.
-PROMPT_CONSTANT = {"instructions": INSTRUCTIONS, "criteria": CRITERIA}
-PROMPT_HASH = hashlib.sha256(
-    json.dumps(PROMPT_CONSTANT, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-).hexdigest()
-
 
 def descriptive_stats(probabilities: dict[str, float]) -> dict[str, float]:
     ps = sorted(probabilities.values(), reverse=True)
@@ -61,7 +50,7 @@ def descriptive_stats(probabilities: dict[str, float]) -> dict[str, float]:
     }
 
 
-def already_done(path: Path) -> set[int]:
+def already_done(path: Path, prompt_hash: str) -> set[int]:
     """Ids deja traites. Refuse la reprise si un prompt_hash differe."""
     if not path.exists():
         return set()
@@ -71,12 +60,12 @@ def already_done(path: Path) -> set[int]:
             if not line.strip():
                 continue
             record = json.loads(line)
-            if record["prompt_hash"] != PROMPT_HASH:
+            if record["prompt_hash"] != prompt_hash:
                 raise SystemExit(
                     f"Reprise refusee : {path} ligne {line_no} porte le prompt_hash\n"
                     f"  {record['prompt_hash']}\n"
                     f"alors que le prompt courant vaut\n"
-                    f"  {PROMPT_HASH}\n"
+                    f"  {prompt_hash}\n"
                     "Le protocole a change depuis ce run. Relancer dans un fichier "
                     "neuf plutot que melanger deux versions de prompt."
                 )
@@ -86,6 +75,7 @@ def already_done(path: Path) -> set[int]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--task", choices=sorted(tasks.TASKS), default="banking77")
     parser.add_argument(
         "--limit",
         type=int,
@@ -94,27 +84,28 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    examples = [
-        json.loads(line)
-        for line in DATA_PATH.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-    done = already_done(OUT_PATH)
+    task = tasks.load(args.task)
+    prompt_hash = task.prompt_hash
+    out_path = task.out_path("jev")
+    examples = task.examples()
+    done = already_done(out_path, prompt_hash)
     todo = [example for example in examples if example["id"] not in done]
     if args.limit is not None:
         todo = todo[: args.limit]
 
-    print(f"prompt_hash : {PROMPT_HASH}")
+    print(f"tache       : {task.name}, {len(task.criteria)} classes")
+    print(f"prompt_hash : {prompt_hash}")
     print(f"dataset     : {len(examples)} exemples, {len(done)} deja traites")
     print(f"a traiter   : {len(todo)}")
     if not todo:
         return
 
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    question = {QUESTION_ID: Choice(instructions=INSTRUCTIONS, criteria=CRITERIA)}
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    question = {QUESTION_ID: Choice(instructions=task.instructions,
+                                    criteria=task.criteria)}
     started_run = time.perf_counter()
 
-    with OUT_PATH.open("a", encoding="utf-8", newline="\n") as out, TypeSafeClient(
+    with out_path.open("a", encoding="utf-8", newline="\n") as out, TypeSafeClient(
         timeout=30.0
     ) as client:
         for n, example in enumerate(todo, 1):
@@ -140,7 +131,7 @@ def main() -> None:
                 **descriptive_stats(answer.probabilities),
                 "input_tokens": response.usage.input_tokens,
                 "latency_ms": round(latency_ms, 1),
-                "prompt_hash": PROMPT_HASH,
+                "prompt_hash": prompt_hash,
                 "run_date": run_date.replace("+00:00", "Z"),
             }
             out.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -154,7 +145,7 @@ def main() -> None:
                     f"| {elapsed / n * 1000:.0f} ms/exemple"
                 )
 
-    print(f"ecrit : {OUT_PATH}")
+    print(f"ecrit : {out_path}")
 
 
 if __name__ == "__main__":

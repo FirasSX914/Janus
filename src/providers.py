@@ -7,10 +7,11 @@ Chaque fournisseur expose la meme methode :
 Le runner ne connait rien d'autre. Ajouter un backend (Opus 5 en v2) est donc
 un module de plus, pas une reecriture.
 
-Tous les backends recoivent le MEME enonce, construit ici a partir de labels.py :
-memes 77 labels, meme ordre, meme formulation. Et tous contraignent la sortie a
-l'enum des 77 labels, de sorte qu'une prediction hors liste soit impossible par
-construction plutot que filtree apres coup.
+Les backends ne connaissent aucun dataset : ils recoivent une `Task` et en
+derivent leur enonce. Tous les backends d'une meme tache recoivent donc le MEME
+enonce -- memes classes, meme ordre, meme formulation -- et tous contraignent la
+sortie a l'enum exact de ses classes, de sorte qu'une prediction hors liste soit
+impossible par construction plutot que filtree apres coup.
 """
 
 import json
@@ -23,20 +24,27 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
 
-from labels import CRITERIA, INSTRUCTIONS, LABEL_NAMES
+from tasks import Task
 
-SYSTEM_PROMPT = (
-    f"{INSTRUCTIONS}\n\n"
-    "Choose exactly one label from the list below. Each label name is followed "
-    "by a description of what it covers.\n\n"
-    + "\n".join(f"- {name}: {description}" for name, description in CRITERIA.items())
-)
 
-LABEL_SCHEMA = {
-    "type": "object",
-    "properties": {"label": {"type": "string", "enum": list(LABEL_NAMES)}},
-    "required": ["label"],
-}
+def build_system_prompt(task: Task) -> str:
+    """L'enonce constant, identique pour tous les backends d'une meme tache."""
+    return (
+        f"{task.instructions}\n\n"
+        "Choose exactly one label from the list below. Each label name is followed "
+        "by a description of what it covers.\n\n"
+        + "\n".join(f"- {name}: {description}"
+                    for name, description in task.criteria.items())
+    )
+
+
+def build_schema(task: Task) -> dict:
+    """Contraint la sortie a l'enum exact des classes de la tache."""
+    return {
+        "type": "object",
+        "properties": {"label": {"type": "string", "enum": list(task.label_names)}},
+        "required": ["label"],
+    }
 
 RETRY_STATUSES = (429, 500, 502, 503, 529)
 MAX_ATTEMPTS = 6
@@ -113,8 +121,10 @@ class GeminiProvider:
     FREE_TIER_RPM = 20
     MIN_INTERVAL_S = 60.0 / FREE_TIER_RPM * 1.08
 
-    def __init__(self, model: str = "gemini-3.8-flash") -> None:
+    def __init__(self, task: Task, model: str = "gemini-3.8-flash") -> None:
         self.model = model
+        self.system_prompt = build_system_prompt(task)
+        self.schema = build_schema(task)
         self.api_key = os.environ["GOOGLE_API_KEY"].strip()
         self._next_allowed = 0.0
 
@@ -127,12 +137,12 @@ class GeminiProvider:
     def call(self, state: str) -> Completion:
         body = {
             "model": self.model,
-            "system_instruction": SYSTEM_PROMPT,
+            "system_instruction": self.system_prompt,
             "input": state,
             "response_format": {
                 "type": "text",
                 "mime_type": "application/json",
-                "schema": LABEL_SCHEMA,
+                "schema": self.schema,
             },
             # Pas de persistance serveur : chaque exemple est evalue seul, sans
             # etat partage qui pourrait faire fuir un exemple dans le suivant.
@@ -205,19 +215,21 @@ class AnthropicProvider:
         "claude-opus-5": (5.0, 25.0),
     }
 
-    def __init__(self, model: str = "claude-opus-5") -> None:
+    def __init__(self, task: Task, model: str = "claude-opus-5") -> None:
         import anthropic  # importe ici : la v1 tourne sans le SDK Anthropic
 
         self.model = model
+        self.system_prompt = build_system_prompt(task)
+        self.schema = build_schema(task)
         self.client = anthropic.Anthropic()
 
     def call(self, state: str) -> Completion:
         response = self.client.messages.create(
             model=self.model,
             max_tokens=self.MAX_TOKENS,
-            system=SYSTEM_PROMPT,
+            system=self.system_prompt,
             messages=[{"role": "user", "content": state}],
-            output_config={"format": {"type": "json_schema", "schema": LABEL_SCHEMA}},
+            output_config={"format": {"type": "json_schema", "schema": self.schema}},
         )
         if response.stop_reason == "refusal":
             raise SystemExit(f"Refus du modele : {response.stop_details}")
@@ -264,10 +276,11 @@ class DeepSeekProvider:
     PEAK_MULTIPLIER = 2.0
     PEAK_HOURS = frozenset({1, 2, 3, 6, 7, 8, 9})
 
-    def __init__(self, model: str = "deepseek-v4-pro") -> None:
+    def __init__(self, task: Task, model: str = "deepseek-v4-pro") -> None:
         from openai import OpenAI  # importe ici : les autres backends s'en passent
 
         self.model = model
+        self.system_prompt = build_system_prompt(task)
         self.client = OpenAI(
             api_key=os.environ["DEEPSEEK_API_KEY"].strip(),
             base_url=self.BASE_URL,
@@ -279,7 +292,7 @@ class DeepSeekProvider:
                 "name": self.TOOL_NAME,
                 "description": "Submit the chosen banking intent label.",
                 "strict": True,
-                "parameters": {**LABEL_SCHEMA, "additionalProperties": False},
+                "parameters": {**build_schema(task), "additionalProperties": False},
             },
         }]
 
@@ -293,7 +306,7 @@ class DeepSeekProvider:
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": state},
             ],
             tools=self.tools,
