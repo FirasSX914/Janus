@@ -496,6 +496,44 @@ son propre résultat ne mesure plus rien. Elles ne seront pas révisées à la
 lecture des résultats ; si l'une d'elles s'avère inatteignable, c'est ce constat
 qui sera rapporté, pas une cible plus clémente.
 
+### Les trois cibles sont inatteignables, et c'est un défaut de conception
+
+Constat après le run frontier : **DeepSeek V4-Pro seul atteint 78,8 %** sur ce
+dataset. Les trois cibles pré-enregistrées — 90 %, 95 %, 98 % — étaient donc
+**hors de portée du fallback lui-même**, indépendamment de toute règle de
+routage. Aucune cascade ne peut dépasser ce que son recours sait faire sur les
+cas qu'on lui envoie.
+
+C'est un **défaut de conception du protocole**, rapporté tel quel. Les cibles ont
+été fixées sans borne supérieure connue : on savait Jev à 77,8 %, on ignorait ce
+que vaudrait le fallback, et on a choisi des paliers ronds plutôt que des paliers
+informés par une borne. Il aurait fallu, au minimum, conditionner les cibles à
+l'accuracy du fallback une fois celle-ci mesurée — ce qui n'aurait pas été du
+*post-hoc*, puisque la mesure du fallback précède la cascade.
+
+**Les cibles ne sont pas révisées.** Elles sont rapportées `unattainable`, avec
+le meilleur seuil effectivement atteint. Les remplacer maintenant par des valeurs
+que les chiffres peuvent honorer reviendrait exactement à ce que la
+pré-enregistrement devait empêcher.
+
+### Le test qui reste, et son plafond
+
+La question réellement décidable par ces données devient :
+
+> **la cascade dépasse-t-elle 78,8 % — l'accuracy du fallback seul — pour moins
+> de 0,220684 $, le coût du fallback seul ?**
+
+C'est une comparaison à deux dimensions contre une référence unique et mesurée,
+pas contre une cible arbitraire.
+
+Le plafond de cette cascade est l'**oracle à 83,2 %** : sur 84 exemples des 500,
+ni Jev ni DeepSeek ne produit la bonne réponse, donc aucune règle de routage
+entre ces deux modèles ne peut les récupérer. Ce plafond est **propre au couple
+Jev / DeepSeek V4-Pro**, pas une propriété du dataset ni de la méthode : un autre
+fallback corrigerait peut-être une partie de ces 84 erreurs communes, et
+déplacerait l'oracle d'autant. Le run Opus 5 prévu en v2 mesurera un oracle
+différent.
+
 ## Dataset
 
 500 exemples du split test de Banking77, graine 42. Provenance, licence et
