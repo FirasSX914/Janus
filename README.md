@@ -237,6 +237,18 @@ Agent-side integrations exist as well, including
 publishes task-timing measurements and notes itself that they are not a general
 reliability benchmark.
 
+TypeSafe publishes its own [workflow evals](https://evals.typesafe.ai/). Their
+reference labels are, in their words, "generated via an average of the responses of
+GPT-6 Astra and Claude Fable 5.1, both at high thinking", and they state that they
+"assume that the code is correct, and measure against the current smartest large
+models" rather than optimising for a ground-truth classification.
+**TypeSafe's reference methodology evaluates agreement with its reference models,
+whereas calibre evaluates predictions against human-labelled ground truth.** These
+answer different questions and neither substitutes for the other.
+
+Jev is also available on [Vercel's AI Gateway](https://vercel.com/changelog/typesafe-ai-jev-now-available-on-ai-gateway)
+as `typesafe-ai/jev`, announced on 16 September 2026, the day after Jev shipped.
+
 Our contribution is an empirical evaluation of confidence-based selective automation
 on a real ground-truth dataset, rather than another implementation of the decision
 layer itself.

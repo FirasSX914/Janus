@@ -624,6 +624,45 @@ C'est donc un programme de travail très proche du nôtre, annoncé comme tel. A
 moment de la vérification, ces métriques sont présentées comme prévues plutôt que
 publiées ; nous n'avons pas vérifié l'état d'avancement de l'issue.
 
+### La méthodologie de référence de TypeSafe
+
+TypeSafe publie ses propres [workflow evals](https://evals.typesafe.ai/). Vérifié
+le 2026-09-17 sur la page elle-même : les labels de référence y sont
+« generated via an average of the responses of GPT-6 Astra and Claude Fable 5.1,
+both at high thinking », et la méthode déclarée est d'« assume that the code is
+correct, and measure against the current smartest large models » plutôt que
+d'optimiser pour une classification de vérité terrain — le billet d'annonce dit
+de même « We don't optimize for a ground truth classification ».
+
+> **TypeSafe's reference methodology evaluates agreement with its reference
+> models, whereas calibre evaluates predictions against human-labelled ground
+> truth.**
+
+C'est un contraste de méthode, pas un reproche : les deux approches répondent à
+des questions différentes et aucune ne remplace l'autre. Mesurer l'accord avec un
+consensus de grands modèles répond à « ce modèle décide-t-il comme les plus gros
+décideraient » ; mesurer contre des labels humains répond à « ce modèle a-t-il
+raison ». Un dataset comme Banking77 a ses propres limites, dont l'ambiguïté de
+certains labels, relevée plus haut sur les 84 erreurs communes.
+
+Sur leur **position déclarée à l'égard des classements publics** : nous n'avons
+trouvé aucune prise de position explicite sur les pages consultées — ni refus de
+participer, ni justification formulée comme telle. Ils exposent la raison de
+construire leur propre évaluation, pas une position sur les classements. Nous
+n'en affirmons donc rien.
+
+### Disponibilité de Jev sur le AI Gateway de Vercel
+
+Vérifié le 2026-09-17 sur le
+[changelog Vercel](https://vercel.com/changelog/typesafe-ai-jev-now-available-on-ai-gateway)
+et sur la [page modèle](https://vercel.com/ai-gateway/models/jev) : Jev est
+disponible sur le AI Gateway de Vercel, annoncé le **16 septembre 2026** — le
+lendemain de sa sortie — sous l'identifiant exact **`typesafe-ai/jev`**.
+
+Sans incidence sur ce dépôt, qui appelle l'API TypeSafe directement : passer par
+une passerelle ajouterait une couche entre le modèle et la mesure, et le
+`model_id` consigné ne serait plus celui que l'API du fournisseur renvoie.
+
 ### Notre contribution
 
 > Our contribution is an empirical evaluation of confidence-based selective
