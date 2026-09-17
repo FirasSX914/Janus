@@ -19,9 +19,15 @@ import collections
 import json
 from pathlib import Path
 
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 JEV_PATH = ROOT / "results" / "raw" / "jev_banking77_500.jsonl"
 FRONTIER_PATH = ROOT / "results" / "raw" / "deepseek_banking77_500.jsonl"
+FIG_DIR = ROOT / "results" / "figures"
 
 # Jev : 42 $/Btok sur les tokens d'entree, sortie gratuite (docs.typesafe.ai/models).
 JEV_USD_PER_MTOK = 0.042
@@ -78,6 +84,54 @@ def simulate(rows: list[dict], threshold: float) -> dict:
         "accuracy": correct / len(rows),
         "cost": cost,
     }
+
+
+def plot_accuracy_vs_cost(results: list[dict], refs: dict, path: Path) -> None:
+    """Accuracy vs cout, un point par seuil du balayage.
+
+    Echelle de cout LINEAIRE : une echelle log rendrait la comparaison de couts
+    absolus trompeuse, ce qui est precisement ce que la figure doit montrer.
+    Fond blanc explicite, pas de transparence : une image transparente devient
+    illisible selon le theme clair ou sombre du lecteur.
+    """
+    fig, ax = plt.subplots(figsize=(9, 5.6), facecolor="white")
+    ax.set_facecolor("white")
+
+    xs = [s["cost"] for s in results]
+    ys = [s["accuracy"] * 100 for s in results]
+    ax.scatter(xs, ys, s=26, color="#1f4e79", alpha=0.75, zorder=3,
+               label="cascade, one point per confidence threshold")
+
+    ax.axhline(refs["oracle"] * 100, linestyle="--", linewidth=1.4, color="#7a7a7a",
+               zorder=2, label=f"oracle ceiling — {refs['oracle']*100:.1f}%")
+    ax.scatter([refs["jev_cost"]], [refs["jev_acc"] * 100], s=150, marker="s",
+               color="#2e7d32", zorder=5, label="Jev only")
+    ax.scatter([refs["frontier_cost"]], [refs["frontier_acc"] * 100], s=150, marker="^",
+               color="#b3541e", zorder=5, label="DeepSeek V4-Pro only")
+
+    best = max(results, key=lambda s: s["accuracy"])
+    ax.scatter([best["cost"]], [best["accuracy"] * 100], s=230, marker="*",
+               color="#c62828", zorder=6, label=f"cascade @ {best['threshold']:.2f}")
+    ax.annotate(
+        f"threshold {best['threshold']:.2f}\n{best['accuracy']*100:.1f}% "
+        f"for ${best['cost']:.3f}\n{best['n_escalated']} DeepSeek calls",
+        (best["cost"], best["accuracy"] * 100), textcoords="offset points",
+        xytext=(14, -6), fontsize=9, color="#c62828",
+        bbox=dict(boxstyle="round,pad=0.35", facecolor="white",
+                  edgecolor="#c62828", linewidth=0.9),
+    )
+
+    ax.set_xlabel("cost per 500 decisions (USD, measured)")
+    ax.set_ylabel("accuracy (%)")
+    ax.set_title("Accuracy vs cost — confidence-based routing on Banking77")
+    ax.set_xlim(0, max(xs + [refs["frontier_cost"]]) * 1.16)
+    ax.grid(alpha=0.3, zorder=0)
+    # Coin haut-droit : le seul quadrant vide. En bas a droite la legende
+    # recouvrait le marqueur "DeepSeek only".
+    ax.legend(loc="upper right", fontsize=9, framealpha=1.0)
+    fig.tight_layout()
+    fig.savefig(path, dpi=200, facecolor="white")
+    plt.close(fig)
 
 
 def main() -> None:
@@ -186,6 +240,19 @@ def main() -> None:
         base = sum(1 for r in rows if lo <= r["confidence"] < hi)
         print(f"  {label:<26} | {a:>6} ({a/max(len(jev_right),1)*100:>4.1f}%) | "
               f"{b:>7} ({b/max(len(ds_right),1)*100:>4.1f}%) | {a+b:>4} / {base}")
+
+    FIG_DIR.mkdir(parents=True, exist_ok=True)
+    out = FIG_DIR / "accuracy_vs_cost.png"
+    plot_accuracy_vs_cost(results, {
+        "jev_acc": jev_ok / n, "jev_cost": jev_cost,
+        "frontier_acc": frontier_ok / n, "frontier_cost": frontier_cost,
+        "oracle": oracle_ok / n,
+    }, out)
+    print()
+    print("=" * 96)
+    print("FIGURE")
+    print("=" * 96)
+    print(f"  {out}")
 
 
 if __name__ == "__main__":

@@ -279,6 +279,64 @@ def print_bootstrap(records: list[dict]) -> None:
         print("Aucun intervalle n'englobe zero sur ces donnees.")
 
 
+def plot_calibration_levels(level_rows: list[tuple], path: Path) -> None:
+    """Confidence annoncee vs accuracy empirique, un point par niveau observe.
+
+    L'atome 1.00 est trace distinctement : il porte a lui seul pres de la moitie
+    du trafic, et toute statistique derivee de `probabilities` y est constante.
+    Les niveaux a faible effectif sont dessines en plus clair et leurs barres de
+    Wilson montrent d'elles-memes ce qu'ils ne permettent pas de conclure.
+
+    Fond blanc explicite, pas de transparence : une image transparente devient
+    illisible selon le theme clair ou sombre du lecteur.
+    """
+    atom = [r for r in level_rows if r[0] >= 1.0]
+    big = [r for r in level_rows if r[0] < 1.0 and r[1] >= SMALL_N]
+    small = [r for r in level_rows if r[0] < 1.0 and r[1] < SMALL_N]
+
+    fig, ax = plt.subplots(figsize=(9, 5.6), facecolor="white")
+    ax.set_facecolor("white")
+    ax.plot([0, 1], [0, 1], linestyle="--", linewidth=1.2, color="#7a7a7a",
+            zorder=1, label="perfect calibration")
+
+    def draw(rows, color, size, alpha, label):
+        if not rows:
+            return
+        xs = [r[0] for r in rows]
+        ys = [r[3] for r in rows]
+        lo = [r[3] - r[4] for r in rows]
+        hi = [r[5] - r[3] for r in rows]
+        ax.errorbar(xs, ys, yerr=[lo, hi], fmt="o", markersize=size, capsize=3,
+                    linewidth=1.1, linestyle="none", color=color, alpha=alpha,
+                    zorder=3, label=label)
+
+    draw(small, "#9db8d2", 5, 0.85, f"observed level, N < {SMALL_N} (95% Wilson)")
+    draw(big, "#1f4e79", 8, 1.0, f"observed level, N ≥ {SMALL_N} (95% Wilson)")
+    draw(atom, "#c62828", 13, 1.0, "the 1.00 atom")
+
+    if atom:
+        level, n, _, accuracy, _, high = atom[0]
+        ax.annotate(f"confidence = 1.00\nN = {n} ({n/5:.0f}% of traffic)\n"
+                    f"accuracy {accuracy*100:.1f}%",
+                    (level, accuracy), textcoords="offset points", xytext=(-14, -30),
+                    ha="right", fontsize=9, color="#c62828",
+                    bbox=dict(boxstyle="round,pad=0.35", facecolor="white",
+                              edgecolor="#c62828", linewidth=0.9))
+
+    ax.set_xlabel("confidence reported by Jev (0.01 grid)")
+    ax.set_ylabel("empirical accuracy (%)")
+    ax.set_title("Calibration — reported confidence vs empirical accuracy")
+    ax.set_xlim(0.15, 1.06)
+    ax.set_ylim(-0.04, 1.08)
+    ax.set_yticks([0, 0.2, 0.4, 0.6, 0.8, 1.0])
+    ax.set_yticklabels(["0", "20", "40", "60", "80", "100"])
+    ax.grid(alpha=0.3, zorder=0)
+    ax.legend(loc="lower right", fontsize=9, framealpha=1.0)
+    fig.tight_layout()
+    fig.savefig(path, dpi=200, facecolor="white")
+    plt.close(fig)
+
+
 def plot_calibration(tier_rows: list[tuple], records: list[dict], path: Path) -> None:
     usable = [(name, n, acc, low, high) for name, n, _, acc, low, high in tier_rows if n]
     xs, ys, los, his, names, ns = [], [], [], [], [], []
@@ -294,25 +352,45 @@ def plot_calibration(tier_rows: list[tuple], records: list[dict], path: Path) ->
         names.append(name)
         ns.append(row[1])
 
-    fig, ax = plt.subplots(figsize=(7.5, 6))
-    ax.plot([0, 1], [0, 1], linestyle="--", linewidth=1, color="0.6",
-            label="calibration parfaite")
-    ax.errorbar(xs, ys, yerr=[los, his], fmt="o", markersize=7, capsize=4,
-                linewidth=1.5, color="#1f4e79", label="palier observe (IC Wilson 95 %)")
+    fig, ax = plt.subplots(figsize=(9, 5.6), facecolor="white")
+    ax.set_facecolor("white")
+    ax.plot([0, 1], [0, 1], linestyle="--", linewidth=1.2, color="#7a7a7a",
+            zorder=1, label="perfect calibration")
+
+    # L'atome 1.00 est le dernier palier et se distingue des autres : il porte
+    # pres de la moitie du trafic et aucune statistique derivee de
+    # `probabilities` n'y varie.
+    atom = [i for i, name in enumerate(names) if name == "1.00"]
+    rest = [i for i, name in enumerate(names) if name != "1.00"]
+    for idx, color, size, label in (
+        (rest, "#1f4e79", 9, "confidence tier (95% Wilson)"),
+        (atom, "#c62828", 14, "the 1.00 atom"),
+    ):
+        if not idx:
+            continue
+        ax.errorbar([xs[i] for i in idx], [ys[i] for i in idx],
+                    yerr=[[los[i] for i in idx], [his[i] for i in idx]],
+                    fmt="o", markersize=size, capsize=4, linewidth=1.5,
+                    linestyle="none", color=color, zorder=3, label=label)
+
     # Annotations toujours a droite : les paliers se tassent vers x=1 et une
     # etiquette placee a gauche traverserait la barre du palier voisin.
-    for x, y, name, n in zip(xs, ys, names, ns):
-        ax.annotate(f"{name}  N={n}", (x, y), textcoords="offset points",
-                    xytext=(12, -3), fontsize=8, color="0.25", ha="left")
-    ax.set_xlabel("confidence annoncee (moyenne du palier)")
-    ax.set_ylabel("accuracy empirique")
-    ax.set_title("Calibration par palier")
-    ax.set_xlim(0, 1.32)
-    ax.set_ylim(0, 1.05)
-    ax.grid(alpha=0.3)
-    ax.legend(loc="upper left", fontsize=9)
+    for i, (x, y, name, n) in enumerate(zip(xs, ys, names, ns)):
+        color = "#c62828" if name == "1.00" else "0.25"
+        ax.annotate(f"{name}   N={n}   {ys[i]*100:.1f}%", (x, y),
+                    textcoords="offset points", xytext=(13, -3), fontsize=9,
+                    color=color, ha="left")
+    ax.set_xlabel("confidence reported by Jev (tier mean, 0.01 grid)")
+    ax.set_ylabel("empirical accuracy (%)")
+    ax.set_title("Calibration — reported confidence vs empirical accuracy")
+    ax.set_xlim(0.3, 1.45)
+    ax.set_ylim(0.2, 1.06)
+    ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
+    ax.set_yticklabels(["20", "40", "60", "80", "100"])
+    ax.grid(alpha=0.3, zorder=0)
+    ax.legend(loc="upper left", fontsize=9, framealpha=1.0)
     fig.tight_layout()
-    fig.savefig(path, dpi=150)
+    fig.savefig(path, dpi=200, facecolor="white")
     plt.close(fig)
 
 
@@ -382,7 +460,12 @@ def main() -> None:
     args.figdir.mkdir(parents=True, exist_ok=True)
     tier_thresholds = [lo for _, lo, _ in TIERS if math.isfinite(lo)]
     tier_thresholds.append(min(r["confidence_r"] for r in records))
+    # Figure principale : les paliers. Les 63 niveaux observes, dont 58 sous
+    # N=10, produisent un nuage de barres de Wilson illisible et suggerent une
+    # precision que les donnees n'ont pas. La version par niveau est conservee
+    # a part, pour qui veut la detailler.
     plot_calibration(tier_rows, records, args.figdir / "calibration.png")
+    plot_calibration_levels(level_rows, args.figdir / "calibration_levels.png")
     plot_risk_coverage(risk_coverage(records, sorted(set(tier_thresholds), reverse=True)),
                        args.figdir / "risk_coverage.png")
     print(f"\n{'='*78}\n5. GRAPHES (traces sur les paliers, pas sur les {len(level_rows)} niveaux)\n{'='*78}")

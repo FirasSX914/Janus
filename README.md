@@ -3,8 +3,9 @@
 On Banking77, routing on Jev's confidence reaches 80.2% accuracy at $0.103 per 500 decisions — higher accuracy than DeepSeek V4-Pro alone (78.8%) at 53% lower cost.
 
 This repository measures the calibration of [TypeSafe](https://docs.typesafe.ai/)'s
-Jev decision model and simulates a Jev → frontier cascade, to answer one question:
-**at what confidence level can Jev decide on its own, rather than paying a frontier
+Jev decision model and evaluates **confidence-based routing**: a Jev → fallback
+cascade that escalates only what Jev is unsure about. It answers one question:
+**at what confidence level can Jev decide on its own, rather than paying a larger
 model, for a given accuracy target?**
 
 The protocol was frozen before any result was looked at
@@ -12,6 +13,8 @@ The protocol was frozen before any result was looked at
 analysis code are all in this repository.
 
 ## Results
+
+![Accuracy vs cost for confidence-based routing on Banking77. Each dot is one confidence threshold; the star marks the 0.67 threshold at 80.2% for $0.103.](results/figures/accuracy_vs_cost.png)
 
 500 examples from the Banking77 test split, 77 intent labels, one call per example.
 
@@ -21,6 +24,10 @@ analysis code are all in this repository.
 | DeepSeek V4-Pro only | 78.8% | $0.2207 | 500 |
 | **Cascade @ 0.67** | **80.2%** | **$0.1033** | **58** (11.6%) |
 | Oracle | 83.2% | — | — |
+
+**What this means:** On this dataset, confidence-based routing improves accuracy over
+either model alone while reducing DeepSeek usage; the disagreements where DeepSeek is
+correct are concentrated at lower Jev confidence levels.
 
 The cascade keeps Jev's answer when its confidence reaches the threshold and
 escalates otherwise. Its cost always includes Jev on all 500 requests — the
@@ -44,6 +51,11 @@ the same granularity as `probabilities`. Nothing is representable between 0.99 a
 1.00. On the full run, 44 values out of 38,500 sit up to one double ULP off the
 grid, which is float arithmetic, not extra resolution.
 
+![Calibration: reported confidence against empirical accuracy, by tier, with 95% Wilson intervals. The 1.00 atom is shown apart.](results/figures/calibration.png)
+
+Every tier sits below the diagonal: reported confidence runs ahead of measured
+accuracy at every level, the 1.00 atom included.
+
 **Accuracy per observed confidence level** (63 distinct levels; the four largest):
 
 | Confidence | N | Correct | Accuracy | 95% Wilson |
@@ -58,7 +70,7 @@ The 1.00 level carries 47.6% of the traffic at 95.8% accuracy. Accuracy drops to
 observations each, together 32.4% of the mass, so no single row below the top few
 supports a conclusion on its own.
 
-**No derived statistic improves on `confidence`.** Three alternatives computed from
+**No tested derived statistic improves on `confidence`.** Three alternatives computed from
 the raw distribution — `margin_top2`, `entropy_norm`, `ratio_top2` — were compared
 by AUROC over the 262 rows outside the 1.00 level, which is the only region where
 they are not constant by construction. Paired bootstrap, 10,000 iterations,
@@ -71,10 +83,10 @@ seed 1729:
 | `margin_top2` | 0.695 | +0.011 [+0.001, +0.021] |
 | `ratio_top2` | 0.691 | +0.015 [+0.003, +0.028] |
 
-The data show no improvement of the alternative statistics over `confidence`; two
-comparisons give a statistically detectable advantage to `confidence`, of small
-magnitude. The alternatives were not pre-registered with a minimum margin to beat,
-so this is an absence of improvement, not a reversal.
+The data show no improvement of the alternative statistics over `confidence`. The
+bootstrap intervals exclude zero for the `margin_top2` and `ratio_top2` differences,
+but the observed differences are small. The alternatives were not pre-registered with
+a minimum margin to beat, so this is an absence of improvement, not a reversal.
 
 ## Agreement between the two models
 
@@ -86,11 +98,12 @@ so this is an absence of improvement, not a reversal.
 | Jev correct, DeepSeek wrong | 22 | 4.4% |
 | DeepSeek correct, Jev wrong | 27 | 5.4% |
 
+Among the 49 disagreements, 74.1% of those DeepSeek wins fall below confidence 0.70,
+against 59.1% of those Jev wins. That concentration is what the routing rule exploits:
+escalating the low-confidence tail reaches most of the cases DeepSeek would get right.
+
 On the 238 examples where Jev returned confidence = 1.00, DeepSeek produced the
 identical prediction in 238 out of 238 cases.
-
-Among the 49 disagreements, 74.1% of those DeepSeek wins fall below confidence
-0.70, against 59.1% of those Jev wins.
 
 ## Limitations
 
@@ -147,8 +160,8 @@ python src/probe.py                             # one call, prints the raw respo
 python src/prepare_data.py                      # rebuilds data/banking77_500.jsonl
 python src/run_jev.py                           # 500 calls, ~$0.051
 python src/run_frontier.py --provider deepseek  # 500 calls, ~$0.221
-python src/analyze.py                           # calibration, risk-coverage, figures
-python src/cascade.py                           # cascade table, no API call
+python src/analyze.py                           # calibration + risk-coverage, writes figures
+python src/cascade.py                           # cascade table + figure, no API call
 ```
 
 Both runners write one line at a time, resume on the ids already present, and refuse
@@ -177,8 +190,12 @@ src/analyze.py        calibration, risk-coverage, figures
 src/cascade.py        cascade simulation, zero API calls
 data/                 frozen dataset + provenance
 results/raw/          raw JSONL, one line per example
+results/figures/      figures, regenerated by analyze.py and cascade.py
 docs/METHOD.md        protocol, measured constraints, related work
 ```
+
+Both figures are produced from the committed raw results by the scripts above. None
+is redrawn by hand.
 
 ## Related work
 
