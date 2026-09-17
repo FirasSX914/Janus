@@ -1,0 +1,4 @@
+# Fins de ligne LF partout : les empreintes sha256 publiées dans
+# data/README.md doivent rester valides sur un clone, quelle que soit la plateforme.
+* text=auto eol=lf
+*.jsonl text eol=lf
