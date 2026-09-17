@@ -172,6 +172,25 @@ part des appels atteint le palier `1.00`. Cette concentration a été constatée
 le diagnostic d'interface décrit ci-dessous ; sa valeur exacte sur le dataset
 sera lue sur le run des 500.
 
+### Compléments mesurés sur le run des 500
+
+Deux faits relevés sur l'ensemble du run (38 500 valeurs de probabilité), que les
+échantillons de diagnostic, plus petits, ne faisaient pas apparaître. Ils portent
+sur l'interface de sortie, pas sur la performance.
+
+- **La somme de `probabilities` ne vaut pas toujours 1.** 467 lignes sur 500
+  somment à 1,00 et **33 somment à 0,99**. La masse manquante est un résidu
+  d'arrondi réparti sur la grille du centième, pas la trace d'une option non
+  listée : les clés sont toujours exactement les 77 labels envoyés.
+  `analyze.py` ne doit donc **pas** poser `sum(probabilities) == 1` comme
+  invariant, et doit tolérer 0,99.
+- **44 valeurs sur 38 500 (0,11 %) s'écartent de la grille du centième**, d'au
+  plus 1,11 × 10⁻¹⁶, soit un ULP de double. Elles ressemblent à un résidu calculé
+  en virgule flottante côté serveur (`0.21000000000000002` plutôt que `0.21`).
+  Ce n'est **pas** de la résolution supplémentaire : la granularité utile reste
+  0,01. `analyze.py` arrondit au centième avant tout regroupement, sinon ces 44
+  valeurs créeraient des niveaux de confiance fantômes.
+
 ### Diagnostic d'interface, sans valeur de performance
 
 La granularité et la saturation ci-dessus ont été établies sur **20 exemples
