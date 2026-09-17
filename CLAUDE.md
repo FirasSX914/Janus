@@ -10,8 +10,8 @@ Répondre à : **à quel seuil de confiance peut-on laisser Jev décider plutôt
 
 - Run et analyse sont **séparés**. `analyze.py` et `cascade.py` ne font JAMAIS d'appel API : ils lisent uniquement les JSONL de `results/raw/`.
 - Toute sortie de run est un JSONL, une ligne par exemple, colonnes exactes :
-  `id, input, gold, predicted, confidence, probabilities, margin_top2, entropy_norm,
-  ratio_top2, latency_ms, input_tokens, model_id, prompt_hash, run_date`
+  `id, text, gold_label, model_id, prediction, confidence, probabilities,
+  margin_top2, entropy_norm, ratio_top2, input_tokens, latency_ms, prompt_hash, run_date`
   `model_id` est la version résolue renvoyée par l'API, pas l'alias envoyé.
   Définitions des trois statistiques descriptives : `docs/METHOD.md`.
 - Clés API dans `.env`, jamais en dur. `.env` est dans `.gitignore`.
@@ -51,6 +51,10 @@ docs/             # METHOD.md, REPRODUCE.md
 ## Métriques produites
 
 - accuracy globale (Jev et frontier)
-- **courbe de calibration** : confiance annoncée vs accuracy empirique, 10 bandes
-- **risk–coverage** : pour chaque seuil de 0,50 à 0,99 → couverture, accuracy, taux d'erreur
+- **calibration** : une ligne par valeur de `confidence` réellement observée
+  (`| Confidence | N | Correct | Accuracy |`), pas de bandes interpolées — la
+  variable est discrète, pas de 0,01 mesuré. Le palier `1.00` est un atome,
+  jamais subdivisé.
+- **risk–coverage** : pour chaque niveau de confiance observable → couverture,
+  accuracy, taux d'erreur
 - **cascade** : pour chaque seuil → part traitée par Jev, part escaladée, accuracy finale, coût total
