@@ -7,8 +7,10 @@
 > against 78.8% at $0.2207 for DeepSeek V4-Pro alone. On Web of Science the same
 > routing **ties Jev alone — 52.8% either way — for 46% more money**.
 >
-> **Two datasets, opposite outcomes. Nothing measured on the first carried over to
-> the second.**
+> **Two datasets, opposite outcomes. None of the routing parameters measured on the
+> first held on the second** — not the optimal threshold, not the sign of the accuracy
+> gap between the two models, not the size or the accuracy of the saturated confidence
+> level, and not whether routing paid for itself at all.
 
 ![Accuracy vs cost on 500 Banking77 examples. Each blue dot is one confidence threshold. Jev alone sits at 77.8% for $0.051, DeepSeek alone at 78.8% for $0.221, and routing at threshold 0.67 reaches 80.2% for $0.103 with 58 DeepSeek calls.](results/figures/accuracy_vs_cost.png)
 
@@ -153,7 +155,7 @@ misses would have read $1.9964 instead.
 
 ## What transfers between the two datasets
 
-Nothing measured on Banking77 predicted Web of Science.
+Every routing parameter measured on Banking77 came out differently on Web of Science.
 
 | | Banking77 | Web of Science |
 |---|---|---|
@@ -175,7 +177,8 @@ Nothing measured on Banking77 predicted Web of Science.
 The sign of the accuracy gap between the two models reverses. The optimal threshold
 moves from 0.67 to 0.37. The saturated confidence level halves in size and loses 19
 points of accuracy. The cascade goes from beating the better single model to matching
-it at higher cost. None of these were predictable from the first dataset.
+it at higher cost. Each of these is a quantity a practitioner would need in order to
+deploy routing, and none of them could have been read off the first dataset.
 
 METHOD.md recorded, before any of this was run, that a threshold far from 0.67 would
 be a result rather than a failure, and that a negative result publishes as a positive
