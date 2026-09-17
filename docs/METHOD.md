@@ -321,10 +321,78 @@ Conséquence : **aucune courbe de calibration ni de risk–coverage n'est traça
 pour un frontier.** Il entre dans la cascade comme un recours à accuracy et coût
 fixes, pas comme un modèle qu'on pourrait à son tour seuiller.
 
+## Procédure de rodage
+
+Tout rodage se fait sur un **échantillon aléatoire à graine documentée**, tiré
+dans les 500, et **jamais sur les premiers ids du fichier**. Le tirage porte sur
+les 500 avant de retirer les ids déjà traités, de sorte que l'échantillon ne
+dépende que de la graine et pas de l'avancement du run. `run_frontier.py` exige
+`--sample` et `--seed` ensemble : un rodage sans graine n'est pas reproductible.
+
+Cette règle vient d'un défaut constaté deux fois. Les deux premiers rodages
+prenaient les 10 premiers ids du dataset. Or le dataset est trié par label
+d'origine : **9 de ces 10 ids appartiennent à la même classe** (`card_arrival`),
+la dixième à une classe voisine. Les deux rodages ont donc comparé les modèles
+sur une seule classe facile, produit deux fois une égalité, et **n'étaient pas
+informatifs** — ni sur l'accuracy, ni sur l'écart entre modèles. Le défaut était
+dans la procédure, pas dans le signal.
+
+Graines utilisées dans le projet, toutes distinctes pour qu'aucune confusion ne
+soit possible :
+
+| graine | usage |
+|---|---|
+| 42 | sous-échantillonnage des 500 exemples dans le split test |
+| 20260917 | diagnostic d'interface de l'API TypeSafe (20 appels) |
+| 1729 | bootstrap apparié des AUROC |
+| 8191 | rodage aléatoire des backends frontier |
+
+### Ce que le rodage sert à valider
+
+Le rodage valide la **mécanique** : que le structured output contraigne
+réellement aux 77 labels, que le tarif et la découpe du cache soient calculés
+correctement, que la version du modèle soit celle attendue, que la latence soit
+soutenable. Il ne sert **pas** à choisir un modèle sur son accuracy : dix
+exemples ne mesurent aucune accuracy, et deux rodages l'ont déjà démontré par
+l'absurde.
+
 ## Frontier baseline — v1
 
+### Ce que la v1 cherche à établir
+
+La question n'est pas « DeepSeek bat-il Jev ». C'est :
+
+> **une cascade Jev → DeepSeek atteint-elle 90 %, 95 % ou 98 % d'accuracy à un
+> coût inférieur à DeepSeek seul ?**
+
+Une égalité d'accuracy entre les deux modèles ne répond donc pas à la question,
+dans un sens ni dans l'autre. Ce qui compte est la structure des désaccords :
+une cascade n'a d'intérêt que si le frontier rattrape des erreurs que Jev commet
+là où Jev se déclare peu sûr, et le coût ne baisse que si Jev tranche seul une
+part suffisante des cas. Les erreurs communes aux deux modèles ne sont
+rattrapables par aucune cascade et fixent le plafond atteignable.
+
+### Statut des fichiers de résultats
+
+Trois statuts distincts, à ne pas confondre :
+
+| fichier | statut | usage |
+|---|---|---|
+| Gemini 3.8 Flash, 7 lignes | **run abandonné** | **données exclues**, fichier supprimé, ne servent jamais |
+| `deepseek_banking77_500.jsonl`, 20 premières lignes | **diagnostic pré-run** | valident la mécanique, ne fondent aucun résultat |
+| `deepseek_banking77_500.jsonl`, une fois complet | **résultat expérimental** | seule source des chiffres publiés |
+
+Les lignes de diagnostic DeepSeek restent dans le fichier, contrairement aux
+lignes Gemini qui ont été supprimées. La différence n'est pas cosmétique : le run
+DeepSeek est **en cours** et les 490 restantes le compléteront sous le même
+`prompt_hash`, donc ces lignes seront des observations du run final au même titre
+que les autres. Le run Gemini est **abandonné** : ses lignes n'auraient jamais
+été complétées et ne pouvaient servir à rien.
+
+### Le fournisseur écarté : Gemini 3.8 Flash
+
 La baseline v1 a d'abord été tentée sur **Gemini 3.8 Flash**, via l'API Google AI
-Studio. Elle est abandonnée.
+Studio. Elle est abandonnée, et ses données exclues.
 
 - **Quota du tier gratuit observé : 20 requêtes par jour.** Constaté par le
   message de quota renvoyé par l'API elle-même —

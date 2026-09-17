@@ -22,6 +22,7 @@ import argparse
 import hashlib
 import json
 import os
+import random
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -72,9 +73,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provider", choices=sorted(PROVIDERS), default="gemini")
     parser.add_argument("--model", default=None, help="surcharge du modele par defaut du backend")
+    parser.add_argument("--sample", type=int, default=None,
+                        help="rodage : tirer N exemples au hasard dans les 500 "
+                             "(exige --seed). Jamais les premiers ids du fichier, "
+                             "qui sont groupes par classe.")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="graine du tirage de rodage, a documenter dans METHOD.md")
     parser.add_argument("--limit", type=int, default=None,
-                        help="ne traiter que les N premiers exemples restants (rodage)")
+                        help="ne traiter que les N premiers exemples restants")
     args = parser.parse_args()
+    if (args.sample is None) != (args.seed is None):
+        parser.error("--sample et --seed vont ensemble : un rodage sans graine "
+                     "documentee n'est pas reproductible.")
 
     provider = PROVIDERS[args.provider](**({"model": args.model} if args.model else {}))
     out_path = ROOT / "results" / "raw" / f"{provider.name}_banking77_500.jsonl"
@@ -84,6 +94,14 @@ def main() -> None:
         for line in DATA_PATH.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+    # Le tirage porte sur les 500, AVANT de retirer les ids deja traites :
+    # l'echantillon ne depend donc que de la graine, pas de l'avancement du run.
+    if args.sample is not None:
+        examples = sorted(random.Random(args.seed).sample(examples, args.sample),
+                          key=lambda e: e["id"])
+        print(f"rodage      : {args.sample} ids tires au hasard, graine {args.seed}")
+        print(f"              {[e['id'] for e in examples]}")
+
     done = already_done(out_path)
     todo = [example for example in examples if example["id"] not in done]
     if args.limit is not None:
