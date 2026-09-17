@@ -30,6 +30,14 @@ cet ordre varie d'une réponse à l'autre : `analyze.py` ne doit jamais s'appuye
 dessus, seulement sur les noms.
 
 `run_date` est un timestamp UTC ISO-8601 pris au moment de l'appel, suffixé `Z`.
+Chez un fournisseur à tarif horaire, c'est cette heure qui fixe le régime
+tarifaire, donc elle est relevée **avant** l'appel et réutilisée pour le calcul
+de coût.
+
+Les fichiers frontier ajoutent des colonnes en fin de ligne, absentes du run Jev
+dont la sortie n'est pas facturée : `output_tokens`, `cost_usd`, `pricing_tier`,
+et selon le backend `cache_hit_tokens`, `cache_miss_tokens`, `reasoning_tokens`.
+Voir « Le run frontier ».
 
 ## Le protocole de questionnement
 
@@ -262,6 +270,151 @@ sur l'atome `1.00` (voir la contrainte expérimentale ci-dessus). L'hypothèse
 n'est donc testable que **hors de cet atome**. Sur l'atome lui-même, elle est
 sans objet — non pas réfutée par les données, mais exclue par la forme de ce que
 l'API renvoie.
+
+### Ce que le bootstrap a mesuré
+
+Sur les 262 observations hors atome : **les données ne montrent pas
+d'amélioration des statistiques alternatives par rapport à `confidence` ; deux
+comparaisons donnent un avantage statistiquement détectable à `confidence`, de
+faible amplitude** (+0,011 pour `margin_top2`, IC [+0,001, +0,021] ; +0,015 pour
+`ratio_top2`, IC [+0,003, +0,028]). La troisième, `entropy_norm`, est
+indiscernable de `confidence` (+0,002, IC [−0,012, +0,015]).
+
+Formulé ainsi et pas autrement : les alternatives n'ont pas été pré-enregistrées
+avec une marge minimale à battre. On constate donc **l'absence d'amélioration**,
+on ne renverse pas l'hypothèse. Et un écart d'AUROC de l'ordre du centième, dont
+la borne basse est à +0,001, ne désigne pas un vainqueur utilisable.
+
+## Le run frontier
+
+`run_frontier.py` ne connaît aucun fournisseur. Le backend est choisi par
+`--provider` et vient de `src/providers.py`, qui expose une interface unique :
+
+```python
+call(state) -> Completion(prediction, input_tokens, output_tokens, model_id, extra)
+```
+
+Ajouter un backend est donc un module de plus, pas une réécriture du runner.
+Tous reçoivent le **même énoncé**, construit dans `providers.py` à partir de
+`labels.py` : mêmes 77 labels, même ordre, même formulation. Et tous contraignent
+la sortie à l'enum des 77 labels — le mécanisme diffère par fournisseur, jamais
+le contenu.
+
+`prompt_hash` est calculé par la **même formule** que le runner Jev, sur la même
+partie constante. Tous les fichiers de résultats doivent porter un `prompt_hash`
+identique, et cette égalité est la preuve vérifiable que les modèles ont reçu le
+même énoncé. Limite connue : le hash couvre les instructions et les 77 critères,
+pas l'enveloppe de rendu propre à chaque fournisseur, laquelle ne fait qu'aplatir
+ces mêmes données.
+
+### Colonnes laissées nulles
+
+Aucun modèle frontier testé **n'expose de distribution de probabilités
+comparable** à celle de Jev. Les colonnes `confidence`, `probabilities`,
+`margin_top2`, `entropy_norm` et `ratio_top2` sont donc `null` dans les fichiers
+frontier. Elles ne sont ni fabriquées, ni approximées, ni dérivées d'une
+auto-évaluation demandée au modèle : une confiance produite par un mécanisme
+différent ne serait pas comparable, et la loger dans la même colonne inviterait
+précisément à la comparer.
+
+Conséquence : **aucune courbe de calibration ni de risk–coverage n'est traçable
+pour un frontier.** Il entre dans la cascade comme un recours à accuracy et coût
+fixes, pas comme un modèle qu'on pourrait à son tour seuiller.
+
+## Frontier baseline — v1
+
+La baseline v1 a d'abord été tentée sur **Gemini 3.8 Flash**, via l'API Google AI
+Studio. Elle est abandonnée.
+
+- **Quota du tier gratuit observé : 20 requêtes par jour.** Constaté par le
+  message de quota renvoyé par l'API elle-même —
+  `Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3.8-flash`.
+  Le délai de reprise annoncé par l'API (« Please retry in ~15s ») s'est révélé
+  trompeur : après six attentes successives des délais indiqués, soit environ six
+  minutes, le 429 persistait. Un quota par minute se serait rouvert.
+- **500 exemples demanderaient 25 jours.** Infaisable.
+- Le rodage s'est arrêté à **7 exemples**, tous pris au début du dataset et
+  **tous de la même classe** (`card_arrival`). Ils ne permettent aucune
+  estimation d'accuracy et ne sont utilisés ni dans les résultats, ni dans les
+  conclusions. Le fichier correspondant a été supprimé plutôt que commité :
+  7 lignes d'une seule classe ne constituent pas un résultat.
+- **Aucune conclusion comparative Jev vs Gemini n'est tirée**, dans aucun sens.
+- Un **repli sur un modèle open-weight** (Groq, Cerebras, dont les tiers gratuits
+  ne servent que `gpt-oss-120b` et `qwen-3.8-27b`) est écarté : la question posée
+  est « payer un frontier vaut-il le coup », pas « un open-weight bat-il Jev ».
+  Une cascade construite sur une autre question vaut moins que pas de cascade.
+- **Faiblesse de reproductibilité à noter** : Gemini renvoie `model_id` égal à
+  l'alias envoyé (`gemini-3.8-flash`), sans version résolue. Contrairement à
+  `jev-1.13.0`, on ne peut pas savoir quelle version a répondu.
+
+### Le backend retenu : DeepSeek V4-Pro
+
+La baseline v1 est **DeepSeek V4-Pro** (`deepseek-v4-pro`), sur l'endpoint
+compatible OpenAI.
+
+**Contrainte aux 77 labels par tool call en mode strict.** C'est le seul
+mécanisme réellement contraignant disponible, établi contre l'API et non
+supposé : `response_format: {"type": "json_schema"}` est refusé (*« This
+response_format type is unavailable now »*), et `json_object` ne garantit que du
+JSON valide, pas l'appartenance à l'enum — il aurait fallu filtrer après coup, ce
+qu'on s'interdit. Le mode strict impose le base_url `/beta`.
+
+**`tool_choice` forcé est refusé en mode thinking** (*« Thinking mode does not
+support this tool_choice »*). L'outil est donc proposé en `auto`. Si le modèle ne
+l'appelle pas, le run **s'arrête** au lieu de rattraper la sortie autrement : une
+prédiction qui échapperait à l'enum serait un défaut de protocole, pas une ligne
+à réparer.
+
+**Le mode thinking est actif par défaut et laissé tel quel.** C'est un **levier
+non exploré**, pas un choix optimisé : ni `reasoning_effort` ni
+`thinking: {type: ...}` ne sont passés. Les tokens de raisonnement sont
+distinguables et logués dans `reasoning_tokens` ; ils sont déjà inclus dans
+`completion_tokens`, donc dans `output_tokens`, et facturés au tarif de sortie.
+
+**`model_id` est l'alias, pas une version résolue.** L'API renvoie
+`deepseek-v4-pro` alors que la version annoncée est DeepSeek-V4-Pro-0813. Même
+faiblesse de reproductibilité que Gemini, et à l'inverse de `jev-1.13.0` : on
+loge ce que l'API renvoie, en sachant qu'il ne désigne pas une version figée.
+
+### Coût : cache et heures pleines
+
+Deux colonnes supplémentaires par rapport au run Jev, dont la sortie n'est pas
+facturée : `output_tokens` et `cost_usd`. Et quatre propres à DeepSeek :
+`cache_hit_tokens`, `cache_miss_tokens`, `reasoning_tokens`, `pricing_tier`.
+
+**La découpe du cache n'est pas un détail.** Tarif officiel relevé le 2026-09-17
+sur `https://api-docs.deepseek.com/quick_start/pricing`, en $ par million de
+tokens :
+
+| | cache hit | cache miss | sortie |
+|---|---|---|---|
+| heures creuses | 0,022 | 0,66 | 1,98 |
+| heures pleines | 0,044 | 1,32 | 3,96 |
+
+L'entrée en cache hit coûte **30 fois moins** qu'en miss. Nos 77 critères étant
+constants sur les 500 appels, le préfixe est mis en cache et le taux de hit
+mesuré au rodage dépasse 98 %. Un coût calculé sans distinguer les deux serait
+faux d'un ordre de grandeur.
+
+**Les heures pleines sont 01:00–04:00 et 06:00–10:00 UTC, du lundi au vendredi**,
+au tarif exactement double. Le coût de chaque ligne est calculé au tarif de
+**l'heure réelle de l'appel**, et `pricing_tier` consigne le régime appliqué pour
+que le coût soit recalculable depuis la ligne seule.
+
+### Claude Opus 5 — v2
+
+Le run Opus 5 reste prévu, dès qu'un crédit API est disponible. Le protocole est
+déjà figé et `AnthropicProvider` est en place : ce sera un
+`--provider anthropic` à lancer, sans rouvrir le runner.
+
+Deux points propres à ce backend, déjà inscrits dans le code. `temperature` en
+est **absent par contrainte** : le paramètre est retiré de l'API sur cette
+génération et une requête qui le contient renvoie une 400. Aucune
+reproductibilité exacte ne sera donc revendiquée — la documentation officielle
+précise par ailleurs que là où `temperature = 0` existait, il n'a jamais garanti
+des sorties identiques. Et `fallbacks` n'est pas activé, à l'encontre de la
+recommandation générale pour ce modèle : un repli servirait un autre modèle au
+milieu du run, ce qu'un benchmark comparatif doit interdire.
 
 ## Cibles d'accuracy de la cascade
 
