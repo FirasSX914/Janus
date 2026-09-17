@@ -534,6 +534,42 @@ fallback corrigerait peut-être une partie de ces 84 erreurs communes, et
 déplacerait l'oracle d'autant. Le run Opus 5 prévu en v2 mesurera un oracle
 différent.
 
+## Second dataset : ce qui est écrit avant de lancer
+
+Le protocole ne change pas. Même pipeline, mêmes métriques, mêmes garde-fous,
+**mêmes cibles pré-enregistrées** — y compris les 90 / 95 / 98 % dont on sait
+déjà qu'elles étaient mal conçues sur Banking77. Seul le dataset change.
+
+### Le seuil 0,67 n'est pas un point de départ
+
+**Si le seuil optimal du second dataset ne ressort pas proche de 0,67, ce n'est
+pas un échec : c'est un résultat.** Il établirait que le seuil n'est pas
+transférable d'une charge de travail à l'autre et doit être mesuré sur chacune —
+ce qui est une conclusion utilisable, et déjà annoncée comme limite dans le
+README de Banking77.
+
+Le 0,67 reste un résultat de Banking77. Il ne sert ni de valeur par défaut, ni de
+point de départ d'une recherche, ni de référence à retrouver. Le balayage du
+second dataset est conduit à l'identique, sur tous les niveaux observés, et le
+seuil qui en sort est lu tel quel.
+
+Symétriquement : si la cascade ne dépasse pas le fallback seul sur ce dataset,
+c'est rapporté ainsi. Un résultat négatif se publie exactement comme un positif,
+et rien n'est réajusté après avoir vu les chiffres.
+
+### Le `prompt_hash` sera différent, et c'est normal
+
+`prompt_hash` couvre les instructions et les critères des labels. Un dataset aux
+labels différents produit donc **nécessairement un hash différent** de celui de
+Banking77 (`5736ce18…`). Ce n'est pas une rupture de protocole : le hash garantit
+qu'à l'intérieur d'un même fichier de résultats, toutes les lignes ont reçu le
+même énoncé, et qu'un runner Jev et un runner frontier portant sur le même
+dataset ont reçu le même. Il ne prétend pas être stable d'un dataset à l'autre.
+
+La garantie reste donc la même sur chaque dataset : un seul `prompt_hash` par
+fichier, et un `prompt_hash` identique entre le fichier Jev et le fichier
+frontier du même dataset.
+
 ## Dataset
 
 500 exemples du split test de Banking77, graine 42. Provenance, licence et
