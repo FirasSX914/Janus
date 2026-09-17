@@ -17,6 +17,7 @@ Contrat des colonnes et definition du prompt_hash : docs/METHOD.md.
 
 import argparse
 import json
+import random
 import math
 import os
 import time
@@ -76,18 +77,29 @@ def already_done(path: Path, prompt_hash: str) -> set[int]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", choices=sorted(tasks.TASKS), default="banking77")
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=None,
-        help="ne traiter que les N premiers exemples restants (rodage)",
-    )
+    parser.add_argument("--sample", type=int, default=None,
+                        help="rodage : tirer N exemples au hasard dans les 500 "
+                             "(exige --seed). Jamais les premiers ids du fichier.")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="graine du tirage de rodage, a documenter dans METHOD.md")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="ne traiter que les N premiers exemples restants")
     args = parser.parse_args()
+    if (args.sample is None) != (args.seed is None):
+        parser.error("--sample et --seed vont ensemble : un rodage sans graine "
+                     "documentee n'est pas reproductible.")
 
     task = tasks.load(args.task)
     prompt_hash = task.prompt_hash
     out_path = task.out_path("jev")
     examples = task.examples()
+    # Le tirage porte sur les 500, AVANT de retirer les ids deja traites :
+    # l'echantillon ne depend donc que de la graine, pas de l'avancement du run.
+    if args.sample is not None:
+        examples = sorted(random.Random(args.seed).sample(examples, args.sample),
+                          key=lambda e: e["id"])
+        print(f"rodage      : {args.sample} ids tires au hasard, graine {args.seed}")
+        print(f"              {[e['id'] for e in examples]}")
     done = already_done(out_path, prompt_hash)
     todo = [example for example in examples if example["id"] not in done]
     if args.limit is not None:
