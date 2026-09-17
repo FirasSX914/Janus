@@ -36,6 +36,8 @@ DEFAULT_FIGDIR = ROOT / "results" / "figures"
 
 Z95 = 1.959963984540054
 SMALL_N = 10  # en deca, l'intervalle est trop large pour lire la ligne seule
+BOOTSTRAP_ITERS = 10_000
+BOOTSTRAP_SEED = 1729  # distinct de la graine 42 du dataset, pour ne pas les confondre
 
 # Paliers, bornes basses incluses, bornes hautes exclues.
 TIERS: tuple[tuple[str, float, float], ...] = (
@@ -58,6 +60,22 @@ def wilson(correct: int, n: int) -> tuple[float, float]:
     return max(0.0, center - half), min(1.0, center + half)
 
 
+def average_ranks(values: np.ndarray) -> np.ndarray:
+    """Rangs a partir de 1, ex aequo ramenes au rang moyen du groupe."""
+    order = np.argsort(values, kind="mergesort")
+    ordered = values[order]
+    starts_group = np.empty(len(ordered), dtype=bool)
+    starts_group[0] = True
+    starts_group[1:] = ordered[1:] != ordered[:-1]
+    group = np.cumsum(starts_group) - 1
+    counts = np.bincount(group)
+    starts = np.concatenate(([0], np.cumsum(counts)[:-1]))
+    mean_rank = starts + (counts - 1) / 2 + 1
+    ranks = np.empty(len(ordered), dtype=float)
+    ranks[order] = mean_rank[group]
+    return ranks
+
+
 def auroc(scores: np.ndarray, correct: np.ndarray) -> float:
     """AUROC de `scores` pour separer les reponses justes des fausses.
 
@@ -66,22 +84,11 @@ def auroc(scores: np.ndarray, correct: np.ndarray) -> float:
     grossiere et produisent beaucoup d'egalites.
     """
     n_pos = int(correct.sum())
-    n_neg = int((~correct).sum())
+    n_neg = int(len(correct) - n_pos)
     if n_pos == 0 or n_neg == 0:
         return float("nan")
-    order = np.argsort(scores, kind="mergesort")
-    ordered = scores[order]
-    ranks = np.empty(len(ordered), dtype=float)
-    i = 0
-    while i < len(ordered):
-        j = i
-        while j + 1 < len(ordered) and ordered[j + 1] == ordered[i]:
-            j += 1
-        ranks[i : j + 1] = (i + j) / 2 + 1
-        i = j + 1
-    unordered = np.empty(len(ordered), dtype=float)
-    unordered[order] = ranks
-    return (unordered[correct].sum() - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg)
+    ranks = average_ranks(scores)
+    return (ranks[correct].sum() - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg)
 
 
 def load(path: Path) -> list[dict]:
@@ -204,6 +211,74 @@ def print_discrimination(records: list[dict]) -> None:
     print("strictement superieur a une reponse fausse, les ex aequo comptant 1/2.")
 
 
+def print_bootstrap(records: list[dict]) -> None:
+    """Bootstrap apparie des AUROC et de leurs differences, hors atome 1.00."""
+    zone = [r for r in records if r["confidence_r"] < 1.00]
+    correct = np.array([r["correct"] for r in zone], dtype=bool)
+    n = len(zone)
+    columns = {
+        "confidence": np.array([r["confidence_r"] for r in zone], dtype=float),
+        "margin_top2": np.array([r["margin_top2"] for r in zone], dtype=float),
+        # Orientation documentee dans METHOD.md : entropy_norm varie en sens inverse.
+        "entropy_norm": np.array([-r["entropy_norm"] for r in zone], dtype=float),
+        "ratio_top2": np.array([r["ratio_top2"] for r in zone], dtype=float),
+    }
+
+    print(f"Reechantillonnage APPARIE : a chaque tirage, le meme jeu d'indices est")
+    print(f"applique aux quatre scores, donc les differences portent exactement sur")
+    print(f"les memes observations. {BOOTSTRAP_ITERS} iterations, graine {BOOTSTRAP_SEED},")
+    print(f"tirage avec remise de {n} observations parmi {n}.\n")
+
+    rng = np.random.default_rng(BOOTSTRAP_SEED)
+    draws = {name: np.empty(BOOTSTRAP_ITERS) for name in columns}
+    degenerate = 0
+    for i in range(BOOTSTRAP_ITERS):
+        idx = rng.integers(0, n, n)
+        resampled_correct = correct[idx]
+        if resampled_correct.all() or not resampled_correct.any():
+            degenerate += 1
+            for name in columns:
+                draws[name][i] = np.nan
+            continue
+        for name, values in columns.items():
+            draws[name][i] = auroc(values[idx], resampled_correct)
+
+    point = {name: auroc(values, correct) for name, values in columns.items()}
+    print(f"{'Statistique':>14} | {'AUROC':>6} | {'IC 95 % bootstrap':>20}")
+    print("-" * 78)
+    for name in columns:
+        low, high = np.nanpercentile(draws[name], [2.5, 97.5])
+        print(f"{name:>14} | {point[name]:>6.3f} | [{low:>6.3f}, {high:>6.3f}]")
+
+    print(f"\nDifferences appariees, positif = confidence discrimine mieux :\n")
+    print(f"{'Difference':>30} | {'Ecart':>7} | {'IC 95 % bootstrap':>18} | verdict")
+    print("-" * 92)
+    verdicts = []
+    for name in ("entropy_norm", "margin_top2", "ratio_top2"):
+        diff = draws["confidence"] - draws[name]
+        low, high = np.nanpercentile(diff, [2.5, 97.5])
+        observed = point["confidence"] - point[name]
+        includes_zero = low <= 0 <= high
+        verdicts.append(includes_zero)
+        verdict = "l'IC englobe zero" if includes_zero else "l'IC exclut zero"
+        label = f"confidence - {name}"
+        print(f"{label:>30} | {observed:>+7.3f} | [{low:>+6.3f}, {high:>+6.3f}] | {verdict}")
+
+    if degenerate:
+        print(f"\n{degenerate} tirages ecartes : une seule classe apres reechantillonnage.")
+    print()
+    if all(verdicts):
+        print("Les trois intervalles englobent zero : pouvoir discriminant comparable")
+        print("dans la zone non saturee. Aucune des quatre statistiques ne se distingue")
+        print("des autres sur ces donnees.")
+    elif any(verdicts):
+        print("Certains intervalles englobent zero, d'autres non : voir le detail")
+        print("ligne a ligne ci-dessus. Un ecart ponctuel dont l'IC contient zero ne")
+        print("permet pas de departager deux statistiques.")
+    else:
+        print("Aucun intervalle n'englobe zero sur ces donnees.")
+
+
 def plot_calibration(tier_rows: list[tuple], records: list[dict], path: Path) -> None:
     usable = [(name, n, acc, low, high) for name, n, _, acc, low, high in tier_rows if n]
     xs, ys, los, his, names, ns = [], [], [], [], [], []
@@ -300,6 +375,9 @@ def main() -> None:
 
     print(f"\n{'='*78}\n4. POUVOIR DISCRIMINANT HORS ATOME 1.00\n{'='*78}")
     print_discrimination(records)
+
+    print(f"\n{'='*92}\n4b. BOOTSTRAP APPARIE DES AUROC ET DE LEURS DIFFERENCES\n{'='*92}")
+    print_bootstrap(records)
 
     args.figdir.mkdir(parents=True, exist_ok=True)
     tier_thresholds = [lo for _, lo, _ in TIERS if math.isfinite(lo)]

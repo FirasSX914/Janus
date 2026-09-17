@@ -245,12 +245,35 @@ un pouvoir discriminant supérieur à `confidence` pour décider quand escalader
 est ouverte. Elle sera tranchée sur les 500 exemples, en comparant les quatre
 colonnes sur les mêmes points observables, et pas avant.
 
+La comparaison se fait par **AUROC** — probabilité qu'une réponse juste reçoive
+un score supérieur à une réponse fausse, les ex aequo comptant 1/2, ce qui est
+indispensable sur une grille aussi grossière — et l'écart entre deux statistiques
+est jugé par **bootstrap apparié** : à chaque tirage, le même jeu d'indices est
+appliqué aux quatre scores, de sorte que les différences portent exactement sur
+les mêmes observations. 10 000 itérations, graine 1729, intervalles en
+percentiles. L'appariement supprime la variance d'échantillonnage commune aux
+quatre statistiques ; comparer leurs intervalles marginaux, qui se recouvrent
+largement, répondrait à une autre question et sous-estimerait la puissance du
+test. Un intervalle de différence contenant zéro ne départage pas.
+
 Une restriction de portée, qui tient de la structure et non de l'observation :
 les trois colonnes étant des fonctions de `probabilities`, elles sont constantes
 sur l'atome `1.00` (voir la contrainte expérimentale ci-dessus). L'hypothèse
 n'est donc testable que **hors de cet atome**. Sur l'atome lui-même, elle est
 sans objet — non pas réfutée par les données, mais exclue par la forme de ce que
 l'API renvoie.
+
+## Cibles d'accuracy de la cascade
+
+La cascade sera rapportée pour trois cibles d'accuracy : **90 %, 95 % et 98 %**.
+
+Ces trois valeurs sont **fixées ici avant le moindre run frontier**, et avant
+donc de connaître l'accuracy du modèle frontier, le coût de l'escalade et le
+point de fonctionnement qui en résulte. La raison est simple : une cible choisie
+après coup est toujours celle que les chiffres flattent, et un seuil ajusté sur
+son propre résultat ne mesure plus rien. Elles ne seront pas révisées à la
+lecture des résultats ; si l'une d'elles s'avère inatteignable, c'est ce constat
+qui sera rapporté, pas une cible plus clémente.
 
 ## Dataset
 
