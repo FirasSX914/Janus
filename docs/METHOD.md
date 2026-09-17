@@ -513,3 +513,88 @@ confiance observé, risk–coverage et cascade, toutes agrégées sur les 500. A
 conclusion par label ne sera tirée de ce run. Du per-class demanderait un tirage
 stratifié — un autre fichier, une autre graine documentée, pas un redécoupage de
 celui-ci.
+
+## Related work
+
+Jev est sorti le 2026-09-15. Ce qui suit recense ce qui est apparu autour depuis,
+**vérifié le 2026-09-17 sur les dépôts eux-mêmes**, et rien d'autre. Chaque ligne
+renvoie à un README ou à une issue que nous avons lus. Les dépôts évoluent vite :
+ces constats sont datés, pas définitifs.
+
+Deux mises en garde sur la portée de ce recensement. Il ne s'appuie que sur une
+recherche par nom sur GitHub, donc il ne prétend pas être exhaustif, et **aucune
+affirmation du type « personne n'a fait X » n'en est tirée** — nous n'avons pas
+mené une recherche assez large pour la soutenir. Et nous n'avons pas réexécuté
+les mesures citées : elles sont rapportées telles que les dépôts les publient.
+
+### Réimplémentations open-source du pattern
+
+| dépôt | ce que c'est | calibration exposée | mesures sur vérité terrain |
+|---|---|---|---|
+| [TheoLeeCJ/openjev](https://github.com/TheoLeeCJ/openjev) | reproduit le pattern d'interface, lit les probabilités d'options d'un modèle 4B local | aucune métrique de calibration au README ; il recommande seulement de « calibrate and validate on the workload where they will make decisions » | **oui** — balanced accuracy publiée sur WANLI (256 lignes) et sur un jeu de décisions rédigées (144 lignes) |
+| [bnsd55/openjev](https://github.com/bnsd55/OpenJev) | JSON contraint en un passage batché sur Apple Silicon (MLX) ; framework, pas de modèle entraîné | **oui** — temperature scaling ajusté par minimisation de NLL, ECE rapportée avant/après : 0,0870 → 0,0773 à T = 1,7178 | 24 cas étiquetés donnant 72 décisions au niveau champ |
+| [genai-craft/openvons](https://github.com/genai-craft/openvons) | couche de décision texte / vision / voix, avec gating sur la confiance | **oui, la plus complète** — temperature, isotonic, et métriques ECE / Brier / NLL / macro-F1 dans `openvons.core` | benchmarks référencés dans `docs/lm_benchmark.md` et suivants |
+| [kw2828/OpenJev](https://github.com/kw2828/OpenJev) | playground de décision et expériences Doom ; baseline NumPy de 5 253 paramètres apprise par clonage comportemental | aucune — le README dit explicitement « Scores are uncalibrated and conditional on the supplied candidates » | données Doom synthétiques |
+| [zhihz/openjev](https://github.com/zhihz/openjev) | « Local bilingual probability decisions… Independent research preview » | non vérifié en détail | non vérifié |
+
+D'autres dépôts portant ce nom existent et apparaissent dans la recherche
+(`mikesmullin/openjev`, `franknoh/OpenJev`, `inboxpraveen/OpenJev`,
+`allay-team/openjev`) ; nous ne les avons pas examinés.
+
+Un dépôt cité par la liste de travail, `AlexWortega/openjev`, **n'a pas pu être
+vérifié** : 404 aux deux casses au 2026-09-17. Il n'est référencé
+qu'indirectement, par la description de `mikesmullin/openjev` (« Local
+reproduction of AlexWortega/openjev »). Nous n'en tirons rien.
+
+### Frameworks de décision sans modèle propre
+
+| dépôt | ce que c'est | calibration exposée | mesures sur vérité terrain |
+|---|---|---|---|
+| [aigodsend9-boop/specter-decision-engine](https://github.com/aigodsend9-boop/specter-decision-engine) | framework Python, version 0.3.0 au moment de la vérification ; **aucun modèle entraîné embarqué** (« Não há modelo treinado embarcado »), le backend local est un scoreur lexical déterministe | **oui** — temperature par minimisation de NLL, isotonic par PAV, et Brier / NLL / ECE avec bootstrap | l'API de calibration prend des enregistrements étiquetés ; aucune mesure publiée sur un dataset nommé n'a été vérifiée |
+| [grishahq/decisionbridge](https://github.com/grishahq/decisionbridge) | transforme des LLM existants (OpenAI, Anthropic, OpenRouter, MLX local) en fonctions de décision | temperature calibration sur exemples étiquetés séparés ; ni ECE ni Brier ni NLL au README | l'évaluation fournie est décrite comme « a small, English-only, **AI-authored synthetic** pilot » |
+| [dbobo4/local-llm-probabilistic-decision-engine](https://github.com/dbobo4/local-llm-probabilistic-decision-engine) | transforme un modèle causal en moteur de décision par scoring direct des candidats (`choice`, `boolean`, `rating`) | aucune métrique au README ; il avertit que « Calibration must be measured separately on representative labeled data » | benchmarks de routage et de vérification arithmétique, centrés accuracy |
+
+### Intégrations agent et outillage
+
+[browser-use/jev-ultrafast](https://github.com/browser-use/jev-ultrafast) fait
+choisir à Jev une opération et un élément dans un espace d'actions indexé pour
+piloter un navigateur. Il publie des mesures de temps de tâche — médiane 9,450 s
+→ 7,092 s — et précise lui-même leur portée : « This is three repeats of one task
+on one browser profile, not a general reliability benchmark ». Pas de
+calibration.
+
+Plusieurs intégrations d'outillage existent et ont été constatées sans être
+examinées : `jev-mcp` sous plusieurs propriétaires (`jkudish`, `blakestone-x`,
+`benballintyn`), `typesafe-mod` (`BeLazy167`), `jev-playwright-mcp` (`krw82`),
+`jev-review` (`NiazMorshed2007`).
+
+### Le travail le plus proche du nôtre
+
+[hamakyo/jev-starter](https://github.com/hamakyo/jev-starter) vise la même couche
+que nous : contrats de décision, seuils de politique, fallbacks et évaluation. Le
+README annonce « Brier score, calibration error, coverage/risk across confidence
+thresholds, AURC where meaningful » comme **métriques prévues**, et décrit une
+comparaison « Jev-only, baseline judge, and Jev → fallback judge cascade on the
+same labeled dataset ». Son
+[issue #5](https://github.com/hamakyo/jev-starter/issues/5), « Build the
+evaluation harness for calibration and selective automation », spécifie ECE et
+Brier, un balayage de seuils exposant l'arbitrage coverage / risk, les cascades
+avec fallback, et un horodatage des tarifs pour éviter les dérives de coût
+silencieuses.
+
+C'est donc un programme de travail très proche du nôtre, annoncé comme tel. Au
+moment de la vérification, ces métriques sont présentées comme prévues plutôt que
+publiées ; nous n'avons pas vérifié l'état d'avancement de l'issue.
+
+### Notre contribution
+
+> Our contribution is an empirical evaluation of confidence-based selective
+> automation on a real ground-truth dataset, rather than another implementation
+> of the decision layer itself.
+
+Ce que cela implique concrètement, et qui découle du reste de ce document : le
+protocole a été figé avant tout résultat, le dataset est commité avec ses
+empreintes, les résultats bruts le sont aussi, et la granularité réelle de la
+variable de confiance a été mesurée avant d'être interprétée. Nous n'ajoutons
+aucune métrique ni aucune méthode de calibration après avoir pris connaissance
+de ces travaux : le protocole reste gelé.
