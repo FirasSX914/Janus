@@ -30,8 +30,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
+import tasks  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_INPUT = ROOT / "results" / "raw" / "jev_banking77_500.jsonl"
 DEFAULT_FIGDIR = ROOT / "results" / "figures"
 
 Z95 = 1.959963984540054
@@ -425,14 +426,23 @@ def plot_risk_coverage(rows: list[tuple], path: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Analyse d'un JSONL de results/raw/.")
-    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
+    parser.add_argument("--task", choices=sorted(tasks.TASKS), default="banking77")
+    parser.add_argument("--runner", default="jev")
+    parser.add_argument("--input", type=Path, default=None,
+                        help="surcharge le fichier deduit de --task")
     parser.add_argument("--figdir", type=Path, default=DEFAULT_FIGDIR)
     args = parser.parse_args()
 
-    records = load(args.input)
+    task = tasks.load(args.task)
+    # Les figures de la tache de reference gardent leur nom historique ; les
+    # autres sont suffixees, pour que le README ne change pas de cible.
+    suffix = "" if task.name == "banking77" else f"_{task.name}"
+    path = args.input or task.out_path(args.runner)
+    records = load(path)
     correct = sum(r["correct"] for r in records)
 
-    print(f"fichier      : {args.input}")
+    print(f"tache        : {task.name}, {len(task.criteria)} classes")
+    print(f"fichier      : {path}")
     print(f"lignes       : {len(records)}")
     print(f"model_id     : {sorted({r['model_id'] for r in records})}")
     print(f"prompt_hash  : {sorted({r['prompt_hash'] for r in records})}")
@@ -464,13 +474,13 @@ def main() -> None:
     # N=10, produisent un nuage de barres de Wilson illisible et suggerent une
     # precision que les donnees n'ont pas. La version par niveau est conservee
     # a part, pour qui veut la detailler.
-    plot_calibration(tier_rows, records, args.figdir / "calibration.png")
-    plot_calibration_levels(level_rows, args.figdir / "calibration_levels.png")
+    plot_calibration(tier_rows, records, args.figdir / f"calibration{suffix}.png")
+    plot_calibration_levels(level_rows, args.figdir / f"calibration_levels{suffix}.png")
     plot_risk_coverage(risk_coverage(records, sorted(set(tier_thresholds), reverse=True)),
-                       args.figdir / "risk_coverage.png")
+                       args.figdir / f"risk_coverage{suffix}.png")
     print(f"\n{'='*78}\n5. GRAPHES (traces sur les paliers, pas sur les {len(level_rows)} niveaux)\n{'='*78}")
-    print(f"  {args.figdir / 'calibration.png'}")
-    print(f"  {args.figdir / 'risk_coverage.png'}")
+    print(f"  {args.figdir / f'calibration{suffix}.png'}")
+    print(f"  {args.figdir / f'risk_coverage{suffix}.png'}")
 
 
 if __name__ == "__main__":
