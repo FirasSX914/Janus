@@ -570,7 +570,7 @@ les mesures citées : elles sont rapportées telles que les dépôts les publien
 | dépôt | ce que c'est | calibration exposée | mesures sur vérité terrain |
 |---|---|---|---|
 | [TheoLeeCJ/openjev](https://github.com/TheoLeeCJ/openjev) | reproduit le pattern d'interface, lit les probabilités d'options d'un modèle 4B local | aucune métrique de calibration au README ; il recommande seulement de « calibrate and validate on the workload where they will make decisions » | **oui** — balanced accuracy publiée sur WANLI (256 lignes) et sur un jeu de décisions rédigées (144 lignes) |
-| [bnsd55/openjev](https://github.com/bnsd55/OpenJev) | JSON contraint en un passage batché sur Apple Silicon (MLX) ; framework, pas de modèle entraîné | **oui** — temperature scaling ajusté par minimisation de NLL, ECE rapportée avant/après : 0,0870 → 0,0773 à T = 1,7178 | 24 cas étiquetés donnant 72 décisions au niveau champ |
+| [bnsd55/openjev](https://github.com/bnsd55/openjev) | JSON contraint en un passage batché sur Apple Silicon (MLX) ; framework, pas de modèle entraîné | **oui** — temperature scaling ajusté par minimisation de NLL, ECE rapportée avant/après : 0,0870 → 0,0773 à T = 1,7178 | 24 cas étiquetés donnant 72 décisions au niveau champ |
 | [genai-craft/openvons](https://github.com/genai-craft/openvons) | couche de décision texte / vision / voix, avec gating sur la confiance | **oui, la plus complète** — temperature, isotonic, et métriques ECE / Brier / NLL / macro-F1 dans `openvons.core` | benchmarks référencés dans `docs/lm_benchmark.md` et suivants |
 | [kw2828/OpenJev](https://github.com/kw2828/OpenJev) | playground de décision et expériences Doom ; baseline NumPy de 5 253 paramètres apprise par clonage comportemental | aucune — le README dit explicitement « Scores are uncalibrated and conditional on the supplied candidates » | données Doom synthétiques |
 | [zhihz/openjev](https://github.com/zhihz/openjev) | « Local bilingual probability decisions… Independent research preview » | non vérifié en détail | non vérifié |
@@ -626,8 +626,11 @@ publiées ; nous n'avons pas vérifié l'état d'avancement de l'issue.
 
 ### La méthodologie de référence de TypeSafe
 
-TypeSafe publie ses propres [workflow evals](https://evals.typesafe.ai/). Vérifié
-le 2026-09-17 sur la page elle-même : les labels de référence y sont
+TypeSafe publie ses propres workflow evals, dont la méthode est exposée sous
+[*How we evaluate* → *Assume the harness is correct*](https://evals.typesafe.ai/).
+Vérifié le 2026-09-17 sur la page elle-même — il n'existe pas d'ancre ni de page
+de méthodologie distincte, les deux phrases citées sont dans cette sous-section.
+Les labels de référence y sont
 « generated via an average of the responses of GPT-6 Astra and Claude Fable 5.1,
 both at high thinking », et la méthode déclarée est d'« assume that the code is
 correct, and measure against the current smartest large models » plutôt que

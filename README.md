@@ -45,6 +45,11 @@ ceiling of this cascade, not of the task.
 the shape of the probability distribution, and measuring what it actually predicts
 is the point of this repository.
 
+**On these 500 examples, every tier sits below the diagonal: reported confidence runs
+ahead of measured accuracy at every level, the 1.00 atom included.** That is an
+observation about this dataset and this model version, not a property established for
+other tasks.
+
 **The scale is discrete.** Measured on the raw HTTP body, before any SDK parsing:
 across 1,540 probability values, none falls off a 0.01 grid, and `confidence` has
 the same granularity as `probabilities`. Nothing is representable between 0.99 and
@@ -52,9 +57,6 @@ the same granularity as `probabilities`. Nothing is representable between 0.99 a
 grid, which is float arithmetic, not extra resolution.
 
 ![Calibration: reported confidence against empirical accuracy, by tier, with 95% Wilson intervals. The 1.00 atom is shown apart.](results/figures/calibration.png)
-
-Every tier sits below the diagonal: reported confidence runs ahead of measured
-accuracy at every level, the 1.00 atom included.
 
 **Accuracy per observed confidence level** (63 distinct levels; the four largest):
 
@@ -100,7 +102,8 @@ a minimum margin to beat, so this is an absence of improvement, not a reversal.
 
 Among the 49 disagreements, 74.1% of those DeepSeek wins fall below confidence 0.70,
 against 59.1% of those Jev wins. That concentration is what the routing rule exploits:
-escalating the low-confidence tail reaches most of the cases DeepSeek would get right.
+DeepSeek-correct disagreements are disproportionately concentrated in the
+low-confidence tail.
 
 On the 238 examples where Jev returned confidence = 1.00, DeepSeek produced the
 identical prediction in 238 out of 238 cases.
@@ -210,7 +213,7 @@ practice.
 
 - [genai-craft/openvons](https://github.com/genai-craft/openvons) carries the fullest
   calibration surface: temperature, isotonic, and ECE / Brier / NLL / macro-F1.
-- [bnsd55/openjev](https://github.com/bnsd55/OpenJev) reports a fitted temperature and
+- [bnsd55/openjev](https://github.com/bnsd55/openjev) reports a fitted temperature and
   ECE before and after (0.0870 → 0.0773 at T = 1.7178) on 72 field-level decisions.
 - [TheoLeeCJ/openjev](https://github.com/TheoLeeCJ/openjev) publishes balanced accuracy
   on WANLI (256 rows) and on an authored set (144 rows), without calibration metrics.
@@ -237,8 +240,9 @@ Agent-side integrations exist as well, including
 publishes task-timing measurements and notes itself that they are not a general
 reliability benchmark.
 
-TypeSafe publishes its own [workflow evals](https://evals.typesafe.ai/). Their
-reference labels are, in their words, "generated via an average of the responses of
+TypeSafe publishes its own workflow evals, whose method is set out under
+[*How we evaluate* → *Assume the harness is correct*](https://evals.typesafe.ai/).
+Their reference labels are, in their words, "generated via an average of the responses of
 GPT-6 Astra and Claude Fable 5.1, both at high thinking", and they state that they
 "assume that the code is correct, and measure against the current smartest large
 models" rather than optimising for a ground-truth classification.
