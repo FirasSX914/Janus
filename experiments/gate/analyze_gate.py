@@ -172,14 +172,25 @@ def verdict(out: io.StringIO, rows: list[dict]) -> None:
         out.write(f"  inconclusive: tier sizes {high[0]} and {low[0]}, "
                   f"under the pre-registered minimum of {MIN_TIER}.\n")
         return
-    separated = high[3][0] > low[3][1]
+    separated = high[2][0] > low[2][1]
     rises = high[1] / high[0] > low[1] / low[0]
+    # Seconde clause du critere preenregistre, qui manquait ici : un accord
+    # global qui ne bat pas la classe majoritaire est plat, quelle que soit la
+    # pente entre les paliers.
+    overall = sum(1 for r in rows if r["agree"]) / len(rows)
+    baseline = max(Counter(r["reference"] for r in rows).values()) / len(rows)
+    beats_baseline = overall > baseline
     out.write(f"  [0.95,1.00] {high[1] / high[0]:.1%} "
-              f"[{pct(high[3][0])}, {pct(high[3][1])}]\n")
+              f"[{pct(high[2][0])}, {pct(high[2][1])}]\n")
     out.write(f"  [0.00,0.80) {low[1] / low[0]:.1%} "
-              f"[{pct(low[3][0])}, {pct(low[3][1])}]\n")
-    out.write(f"  -> {'usable' if rises and separated else 'flat'}: intervals "
-              f"{'do not overlap' if separated else 'overlap'}.\n")
+              f"[{pct(low[2][0])}, {pct(low[2][1])}]\n")
+    out.write(f"  overall     {overall:.1%} vs majority-class baseline "
+              f"{baseline:.1%}  ({100 * (overall - baseline):+.1f} points)\n")
+    usable = rises and separated and beats_baseline
+    out.write(f"  -> {'usable' if usable else 'flat'}: intervals "
+              f"{'do not overlap' if separated else 'overlap'}, and overall "
+              f"{'beats' if beats_baseline else 'does not beat'} the "
+              f"majority-class baseline.\n")
     out.write("  The verdict does not replace the table above; both are published.\n")
 
 

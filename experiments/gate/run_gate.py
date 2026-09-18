@@ -177,7 +177,15 @@ def run_reference(todo: list[dict], out_path: Path, digest: str, budget: float) 
             f"Heure pleine ({now:%H:%M} UTC) : le tarif y est double et le "
             "protocole interdit d'y lancer le run. Attendre une heure creuse.")
 
-    spent = 0.0
+    # Le plafond porte sur le FICHIER, pas sur l'invocation. Repartir de zero a
+    # chaque reprise laissait le total le franchir sans que rien ne s'arrete :
+    # c'est ce qui est arrive ici, 0,666 $ cumules sous un plafond de 0,60 $.
+    spent = sum(record["cost_usd"] for record in
+                (json.loads(line) for line in
+                 out_path.read_text(encoding="utf-8").splitlines() if line.strip())
+                if isinstance(record.get("cost_usd"), float)) if out_path.exists() else 0.0
+    if spent:
+        print(f"deja depense : ${spent:.4f} sur ce fichier, compte dans le plafond")
     started_run = time.perf_counter()
     with out_path.open("a", encoding="utf-8", newline="\n") as out:
         for n, row in enumerate(todo, 1):
