@@ -66,24 +66,29 @@ repository:
 
 ```
   rule                         thr     cov     acc       cost      p50
-  always_primary                 - 100.0%  77.8%     0.0507    296ms
-  always_fallback                -   0.0%  78.8%     0.2207   2269ms
-  primary_if_confidence_ge    0.67  88.4%  80.2%     0.1033    302ms
+  always_primary                 -  100.0%   77.8%     0.0507    296ms
+  always_fallback                -    0.0%   78.8%     0.2207   2269ms
+  ... 33 more thresholds, written to the report
+  primary_if_confidence_ge    0.67   88.4%   80.2%     0.1033    302ms
+  ... 30 more thresholds, written to the report
 
 VERDICT: ROUTE
-  rule      : primary_if_confidence_ge
-  threshold : 0.67
-  reason    : beats the better single model by +1.4%
-  ceiling   : 83.2% (this pair of models, not the task)
+  threshold   :     0.67
+  accuracy    :    80.2%    +1.4%  vs best single model
+  cost        :  $0.1033     -53%  vs fallback only
+  latency p50 :    302ms     -87%  vs fallback only
+  escalation  :    11.6%  of traffic
+  ceiling     :    83.2%  this pair of models, not the task
 ```
 
 The full sweep is written to the measurement report.
 
-Three columns decide it. **acc** — routing is more accurate here than either model on
-its own. **cost** — it costs less than half of the fallback alone. **p50** — the median
-decision still answers in about 300 ms, because most requests never escalate; the
-fallback alone takes 2.3 seconds. If you are building anything interactive, that last
-column matters before the other two.
+The verdict compares each number against the baseline the decision is actually
+made against. **accuracy** is read against the better of the two models alone.
+**cost** and **latency p50** are read against the fallback, since routing exists
+to avoid calling it: here that is less than half the money and a median decision
+that still answers in about 300 ms, against 2.3 seconds. If you are building
+anything interactive, that last line matters before the other two.
 
 `measure` can also conclude **DO NOT ROUTE**, which is what it does on the second
 dataset in this repository: no threshold beat the better single model, so the policy
