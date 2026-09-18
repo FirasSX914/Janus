@@ -24,7 +24,7 @@ from .policy import Policy, PolicyError
 from .providers.registry import PROVIDERS, resolve
 from .agreement import FORMULA, MIN_TIER, analyse, guard
 from .logmeasure import ask_reference, estimate
-from .logs import LogSpec, observed_decisions, read_log
+from .logs import LogFormatError, LogSpec, observed_decisions, read_log
 from .replay import OfflineProvider, TASKS, resolve_task, stage_artifacts
 from .router import Router
 from .types import Question
@@ -213,8 +213,14 @@ def cmd_measure_log(args) -> int:
     artifacts = Path(args.raw_dir) if args.raw_dir else Path(args.out).with_suffix("").parent / "agreement.artifacts"
     print(f"log        : {args.log}, {len(rows)} decisions")
     print(f"fields     : {spec.describe()}")
-    print(f"decisions  : " + "  ".join(f"{d} {sum(1 for r in rows if r.decision == d)}"
-                                       for d in seen))
+    # Un journal a 77 classes deverserait la liste entiere sur une ligne. On
+    # montre les plus frequentes et on compte le reste.
+    counts = sorted(((d, sum(1 for r in rows if r.decision == d)) for d in seen),
+                    key=lambda kv: -kv[1])
+    head = "  ".join(f"{d} {n}" for d, n in counts[:6])
+    if len(counts) > 6:
+        head += _c(f"  (+{len(counts) - 6} more classes)", "dim")
+    print(f"decisions  : {head}")
     print(f"reference  : {args.reference}")
     print(f"question   : {len(question)} classes")
     print(f"artifacts  : {artifacts}")
@@ -623,7 +629,9 @@ def main(argv: list[str] | None = None) -> int:
     set_color(args.color)
     try:
         return args.func(args)
-    except PolicyError as error:
+    except (PolicyError, LogFormatError) as error:
+        # Un format de journal qui ne colle pas est une erreur d'usage, pas un
+        # plantage : elle se lit, elle ne se deroule pas.
         print(f"\n{type(error).__name__}: {error}", file=sys.stderr)
         return 1
 

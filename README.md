@@ -4,6 +4,15 @@ Janus sends each decision to a small model or to a larger one, according to how
 confident the small model is. It measures where that line sits on your data
 before it routes anything. **Janus ships no default threshold: it measures one.**
 
+It measures from either of two inputs:
+
+- **a labelled dataset** — `--dataset`, with a gold label, so the report is
+  about how often each model is right;
+- **a log of decisions already taken** — `--log`, with a confidence and no gold
+  label, so the report is about how often the logged model **agrees with a
+  reference model**. There is no ground truth in a log, and Janus refuses to
+  print a word that would suggest one.
+
 [![`janus measure` replayed on the two datasets in this repository. On Banking77 it reaches 80.2% at threshold 0.67 -- better than either model alone -- for $0.1033 and a 302ms median decision, against $0.2207 and 2269ms for the fallback alone. On Web of Science no threshold beats the better single model, and the verdict is DO NOT ROUTE.](https://raw.githubusercontent.com/FirasSX914/Janus/main/results/figures/janus_demo.gif)](https://github.com/FirasSX914/Janus/blob/main/RESEARCH.md)
 
 <sub>Real output, replayed from the raw JSONL committed in this repository. No model is called.</sub>
@@ -182,8 +191,9 @@ files are not there. `--replay` on its own works anywhere, on your own
 
 `--dataset` needs a gold label. A decision log has none: it records what a
 decision model **answered** and how confident it was, never whether it was
-right. So this source measures an **agreement with a reference model, not a
-correctness**, and the report refuses to print any other word for it.
+right. So this source measures, in the wording the protocol imposes,
+**agreement with the selected reference model, not correctness** — and the
+report refuses to print any other word for it.
 
 ```bash
 janus measure --log decisions.jsonl --labels verdicts.json   --reference deepseek:deepseek-v4-pro   --input-field command --decision-field verdict --confidence-field confidence

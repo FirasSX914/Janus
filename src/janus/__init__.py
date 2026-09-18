@@ -30,7 +30,7 @@ from .router import Router
 from .types import (Answer, CalibrationReport, Decision, LevelRow, Measurement,
                     OperatingPoint, Question)
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 __all__ = [
     "Router", "measure", "Policy", "Question",
