@@ -653,6 +653,69 @@ conclusion par label ne sera tirée de ce run. Du per-class demanderait un tirag
 stratifié — un autre fichier, une autre graine documentée, pas un redécoupage de
 celui-ci.
 
+## ECE et Brier — ajout descriptif postérieur aux résultats
+
+**Ces deux métriques ont été ajoutées après la publication des résultats.** Elles
+ne modifient **aucun seuil, aucune décision et aucune conclusion** de
+l'expérience : ni les tables de cascade, ni les seuils optimaux de 0,67 et 0,37,
+ni les cibles pré-enregistrées, ni la comparaison entre les deux datasets. Le
+protocole reste gelé. Elles sont là parce que ce sont les deux chiffres qu'un
+lecteur venant de la littérature sur la calibration cherchera en premier, et
+qu'il valait mieux les calculer que le laisser les estimer de tête.
+
+Elles portent sur les sorties de Jev uniquement. Le frontier n'expose pas de
+distribution, donc ni ECE ni Brier ne sont définis pour lui.
+
+### ECE
+
+Écart absolu entre confiance moyenne et accuracy, pondéré par l'effectif de
+chaque groupe. Deux variantes sont rapportées.
+
+**Par niveau observé**, la variante principale : chaque valeur distincte de
+`confidence` forme son propre groupe. C'est exact ici, et cohérent avec le reste
+du document — la variable est discrète sur une grille au centième, donc un
+découpage en bandes de largeur fixe mélangerait des niveaux que l'API distingue
+et en séparerait d'autres sur une frontière arbitraire.
+
+**En dix bandes égales**, la variante conventionnelle, rapportée uniquement pour
+qu'un lecteur puisse comparer à des chiffres publiés ailleurs. Elle est
+systématiquement plus basse que la précédente sur nos données, ce qui est attendu :
+regrouper des niveaux voisins compense partiellement leurs écarts.
+
+### Brier
+
+Brier multiclasse : pour chaque exemple, somme sur **toutes** les classes du carré
+de l'écart entre la probabilité annoncée et la cible one-hot. Il vaut 0 quand
+toute la masse est sur le gold et 2 quand elle est entièrement ailleurs.
+
+Calculé sur `probabilities` **brut, sans renormalisation**, conformément à la
+règle posée pour le contrat du JSONL : l'API renvoie des valeurs au centième et
+une partie des lignes somme à 0,99. Renormaliser fabriquerait une distribution que
+le modèle n'a pas produite, au prix d'une amélioration cosmétique du score.
+
+### Intervalles
+
+Bootstrap non paramétrique sur les exemples, 10 000 tirages, graine 1729 — la même
+que le bootstrap apparié des AUROC, puisque c'est le même rôle. Intervalles en
+percentiles.
+
+### Valeurs mesurées
+
+| | Banking77 | WOS-46985 |
+|---|---|---|
+| confiance moyenne annoncée | 90,7 % | 83,2 % |
+| accuracy empirique | 77,8 % | 52,8 % |
+| écart brut | +12,9 points | +30,4 points |
+| ECE, par niveau observé | 0,1568 [0,1418, 0,2000] | 0,3217 [0,2989, 0,3729] |
+| ECE, 10 bandes égales | 0,1302 [0,1015, 0,1636] | 0,3047 [0,2676, 0,3469] |
+| Brier multiclasse | 0,3518 [0,2947, 0,4102] | 0,7491 [0,6790, 0,8178] |
+
+La réserve déjà posée sur WOS s'applique ici aussi, et pèse plus lourd sur ces
+métriques que sur l'accuracy : une part inconnue de l'écart de calibration tient à
+l'ambiguïté des labels plutôt qu'à une surconfiance du modèle. Un exemple dont le
+gold est `biochemistry/Southern blotting` et qui reçoit une masse importante sur
+`biochemistry/Molecular biology` est compté comme une erreur pleine par le Brier.
+
 ## Related work
 
 Jev est sorti le 2026-09-15. Ce qui suit recense ce qui est apparu autour depuis,

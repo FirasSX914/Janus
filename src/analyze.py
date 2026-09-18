@@ -7,7 +7,9 @@ Produit :
   2. la meme table regroupee par paliers
   3. le risk-coverage, un point par niveau observe, sans interpolation
   4. le pouvoir discriminant des statistiques alternatives, hors atome 1.00
-  5. deux graphes : calibration et risk-coverage, traces sur les paliers
+  5. ECE et Brier, metriques descriptives ajoutees APRES publication des
+     resultats : elles ne modifient aucun seuil ni aucune conclusion
+  6. deux graphes : calibration et risk-coverage, traces sur les paliers
 
 Ce script ne choisit pas de seuil et n'interprete pas ses sorties.
 
@@ -428,6 +430,113 @@ def plot_risk_coverage(rows: list[tuple], path: Path) -> None:
     plt.close(fig)
 
 
+def brier_per_row(records: list[dict]) -> np.ndarray:
+    """Brier multiclasse, contribution de chaque ligne.
+
+    Somme sur toutes les classes du carre de l'ecart entre la probabilite
+    annoncee et la cible one-hot : 0 si la distribution met toute la masse sur
+    le gold, jusqu'a 2 si elle la met entierement ailleurs.
+
+    Calcule sur `probabilities` BRUT, sans renormalisation : l'API renvoie des
+    valeurs au centieme et une partie des lignes somme a 0,99. Renormaliser
+    fabriquerait une distribution que le modele n'a pas produite.
+    """
+    out = np.empty(len(records), dtype=float)
+    for i, record in enumerate(records):
+        gold = record["gold_label"]
+        out[i] = sum((p - (1.0 if name == gold else 0.0)) ** 2
+                     for name, p in record["probabilities"].items())
+    return out
+
+
+def ece_terms(records: list[dict]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Prepare l'ECE par NIVEAU OBSERVE : indices, justesse, valeur des niveaux.
+
+    Pas de bandes de largeur fixe : la variable de confiance est discrete, sur
+    une grille au centieme (voir METHOD.md). Regrouper par niveau observe est
+    donc exact, la ou un decoupage en dix bandes melangerait des niveaux que
+    l'API distingue et en separerait d'autres arbitrairement.
+    """
+    levels = sorted({r["confidence_r"] for r in records})
+    index = {level: i for i, level in enumerate(levels)}
+    return (np.array([index[r["confidence_r"]] for r in records], dtype=int),
+            np.array([r["correct"] for r in records], dtype=float),
+            np.array(levels, dtype=float))
+
+
+def ece_from_terms(idx: np.ndarray, correct: np.ndarray, levels: np.ndarray) -> float:
+    counts = np.bincount(idx, minlength=len(levels)).astype(float)
+    sums = np.bincount(idx, weights=correct, minlength=len(levels))
+    seen = counts > 0
+    accuracy = np.divide(sums, counts, out=np.zeros_like(sums), where=seen)
+    return float(np.sum(counts[seen] / len(idx) * np.abs(accuracy[seen] - levels[seen])))
+
+
+def ece_equal_width(records: list[dict], bins: int = 10) -> float:
+    """Variante conventionnelle a bandes egales, pour comparaison a la litterature."""
+    n = len(records)
+    total = 0.0
+    for b in range(bins):
+        lo, hi = b / bins, (b + 1) / bins
+        subset = [r for r in records
+                  if lo <= r["confidence_r"] < hi
+                  or (b == bins - 1 and r["confidence_r"] >= 1.0)]
+        if not subset:
+            continue
+        accuracy = sum(r["correct"] for r in subset) / len(subset)
+        confidence = sum(r["confidence_r"] for r in subset) / len(subset)
+        total += len(subset) / n * abs(accuracy - confidence)
+    return total
+
+
+def print_ece_brier(records: list[dict]) -> None:
+    """ECE et Brier, avec intervalles bootstrap.
+
+    METRIQUES DESCRIPTIVES AJOUTEES APRES PUBLICATION DES RESULTATS. Elles ne
+    modifient aucun seuil, aucune decision et aucune conclusion : le protocole
+    reste gele. Voir docs/METHOD.md.
+    """
+    n = len(records)
+    idx, correct, levels = ece_terms(records)
+    per_row = brier_per_row(records)
+    point = {
+        "ECE (par niveau observe)": ece_from_terms(idx, correct, levels),
+        "ECE (10 bandes egales)": ece_equal_width(records),
+        "Brier multiclasse": float(per_row.mean()),
+    }
+
+    rng = np.random.default_rng(BOOTSTRAP_SEED)
+    draws = {name: np.empty(BOOTSTRAP_ITERS) for name in point}
+    for i in range(BOOTSTRAP_ITERS):
+        pick = rng.integers(0, n, n)
+        draws["ECE (par niveau observe)"][i] = ece_from_terms(
+            idx[pick], correct[pick], levels)
+        draws["Brier multiclasse"][i] = per_row[pick].mean()
+    # La variante a bandes egales est recalculee sur les memes tirages, mais
+    # depuis les enregistrements, faute de decomposition par ligne.
+    records_array = np.array(records, dtype=object)
+    rng = np.random.default_rng(BOOTSTRAP_SEED)
+    for i in range(BOOTSTRAP_ITERS):
+        pick = rng.integers(0, n, n)
+        draws["ECE (10 bandes egales)"][i] = ece_equal_width(list(records_array[pick]))
+
+    print(f"Confiance moyenne annoncee : "
+          f"{np.mean([r['confidence_r'] for r in records])*100:.1f} %")
+    print(f"Accuracy empirique         : {correct.mean()*100:.1f} %")
+    print(f"Ecart brut                 : "
+          f"{(np.mean([r['confidence_r'] for r in records]) - correct.mean())*100:+.1f} points\n")
+    print(f"{'Metrique':>26} | {'Valeur':>7} | {'IC 95 % bootstrap':>20}")
+    print("-" * 62)
+    for name, value in point.items():
+        low, high = np.percentile(draws[name], [2.5, 97.5])
+        print(f"{name:>26} | {value:>7.4f} | [{low:>6.4f}, {high:>6.4f}]")
+    print(f"\nBootstrap non parametrique sur les exemples, {BOOTSTRAP_ITERS} tirages,")
+    print(f"graine {BOOTSTRAP_SEED}, intervalles en percentiles.")
+    print("Brier multiclasse : somme des carres sur toutes les classes, de 0 (masse")
+    print("entiere sur le gold) a 2 (masse entiere ailleurs). Calcule sur les")
+    print("probabilites brutes, sans renormalisation.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Analyse d'un JSONL de results/raw/.")
     parser.add_argument("--task", choices=sorted(tasks.TASKS), default="banking77")
@@ -482,7 +591,10 @@ def main() -> None:
     plot_calibration_levels(level_rows, args.figdir / f"calibration_levels{suffix}.png")
     plot_risk_coverage(risk_coverage(records, sorted(set(tier_thresholds), reverse=True)),
                        args.figdir / f"risk_coverage{suffix}.png")
-    print(f"\n{'='*78}\n5. GRAPHES (traces sur les paliers, pas sur les {len(level_rows)} niveaux)\n{'='*78}")
+    print(f"\n{'='*62}\n5. ECE ET BRIER (descriptif, ajoute apres publication)\n{'='*62}")
+    print_ece_brier(records)
+
+    print(f"\n{'='*78}\n6. GRAPHES (traces sur les paliers, pas sur les {len(level_rows)} niveaux)\n{'='*78}")
     print(f"  {args.figdir / f'calibration{suffix}.png'}")
     print(f"  {args.figdir / f'risk_coverage{suffix}.png'}")
 

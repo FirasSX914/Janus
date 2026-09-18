@@ -217,6 +217,34 @@ The 1.00 level carries 47.6% of the traffic at 95.8% accuracy. Accuracy drops to
 observations each, together 32.4% of the mass, so no single row below the top few
 supports a conclusion on its own.
 
+### ECE and Brier
+
+Added after the results were published, as descriptive figures only. They change no
+threshold, no decision and no conclusion; the protocol stays frozen. Both are
+computed on Jev's output — the fallback exposes no distribution, so neither is
+defined for it.
+
+| | Banking77 | Web of Science |
+|---|---|---|
+| mean reported confidence | 90.7% | 83.2% |
+| empirical accuracy | 77.8% | 52.8% |
+| **gap** | **+12.9 points** | **+30.4 points** |
+| ECE, per observed level | 0.1568 [0.1418, 0.2000] | 0.3217 [0.2989, 0.3729] |
+| ECE, 10 equal-width bins | 0.1302 [0.1015, 0.1636] | 0.3047 [0.2676, 0.3469] |
+| multiclass Brier | 0.3518 [0.2947, 0.4102] | 0.7491 [0.6790, 0.8178] |
+
+ECE is reported per observed confidence level as the primary figure, since the
+variable is discrete on a 0.01 grid and fixed-width bins would merge levels the API
+distinguishes; the conventional ten-bin variant is given for comparison with
+published numbers. Brier is the multiclass form, summed over all classes against the
+one-hot target, ranging 0 to 2, and computed on the raw probabilities without
+renormalisation. Intervals are percentile bootstrap over examples, 10,000 draws,
+seed 1729. Definitions in [`docs/METHOD.md`](docs/METHOD.md).
+
+On Web of Science the label caveat above weighs on these two figures more than on
+accuracy: an abstract whose gold is `Southern blotting` and which receives most of
+its mass on `Molecular biology` counts as a full error in the Brier score.
+
 **No tested derived statistic improves on `confidence`.** Three alternatives computed from
 the raw distribution — `margin_top2`, `entropy_norm`, `ratio_top2` — were compared
 by AUROC over the 262 rows outside the 1.00 level, which is the only region where
