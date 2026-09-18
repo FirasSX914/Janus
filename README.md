@@ -1,5 +1,9 @@
 # Janus
 
+[![PyPI version](https://img.shields.io/pypi/v/janus-decide.svg)](https://pypi.org/project/janus-decide/)
+[![License: MIT](https://img.shields.io/pypi/l/janus-decide.svg)](https://github.com/FirasSX914/Janus/blob/main/LICENSE)
+[![Python versions](https://img.shields.io/pypi/pyversions/janus-decide.svg)](https://pypi.org/project/janus-decide/)
+
 Janus sends each decision to a small model or to a larger one, according to how
 confident the small model is. It measures where that line sits on your data
 before it routes anything. **Janus ships no default threshold: it measures one.**
