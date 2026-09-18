@@ -225,6 +225,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--model", choices=("jev", "reference"), required=True)
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--sample-file", type=Path, default=None,
+                        help="liste d'ids figee definissant l'echantillon mesure. "
+                             "A preferer a --target-n/--seed : un tirage porte "
+                             "sur les lignes restantes, donc il depend de "
+                             "l'avancement du run et ne se rejoue pas.")
     parser.add_argument("--target-n", type=int, default=None,
                         help="taille visee de l'echantillon mesure. Les lignes "
                              "deja ecrites en font partie ; le complement est "
@@ -242,6 +247,25 @@ def main() -> None:
     out_path = RAW / f"gate_{args.model}.jsonl"
     done = already_done(out_path, digest)
     todo = [row for row in rows if row["id"] not in done]
+
+    if args.sample_file is not None:
+        if args.target_n is not None or args.seed is not None:
+            parser.error("--sample-file definit deja l'echantillon : ne pas y "
+                         "ajouter --target-n/--seed.")
+        spec = json.loads(args.sample_file.read_text(encoding="utf-8"))
+        if spec.get("prompt_hash") != digest:
+            raise SystemExit(
+                f"{args.sample_file} a ete fige sous le prompt_hash\n"
+                f"  {spec.get('prompt_hash')}\nalors que le prompt courant vaut\n"
+                f"  {digest}\nL'echantillon ne decrit pas cette mesure.")
+        wanted = set(spec["ids"])
+        unknown = wanted - {row["id"] for row in rows}
+        if unknown:
+            raise SystemExit(f"{len(unknown)} ids de l'echantillon sont absents "
+                             f"de {DECISIONS.name}.")
+        todo = [row for row in todo if row["id"] in wanted]
+        print(f"echantillon : {len(wanted)} ids figes dans "
+              f"{args.sample_file.name}, {len(wanted) - len(todo)} deja faits")
 
     if (args.target_n is None) != (args.seed is None):
         parser.error("--target-n et --seed vont ensemble : un tirage sans graine "

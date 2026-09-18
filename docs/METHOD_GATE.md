@@ -222,6 +222,33 @@ graine **20260918**. Jamais les 324 premières lignes : le fichier est ordonné
 par session puis par chronologie, en prendre la tête ordonnerait l'échantillon
 par le moment de la journée et par le sujet de la session.
 
+### L'échantillon est défini par un fichier d'ids, pas par la graine
+
+`data/gate_sample_400.json` porte les 400 ids, et **c'est lui qui définit
+l'échantillon**. La graine seule ne suffit pas, pour une raison mécanique : le
+tirage porte sur les décisions *restantes au moment du lancement*, donc sur un
+ensemble qui dépend du nombre de lignes déjà écrites. Le run a été interrompu
+deux fois, et rejouer `--seed 20260918` sur un fichier plus avancé tire dans un
+ensemble différent et rend un autre sous-ensemble. Une graine ne décrit un
+tirage que si l'état de départ est fixe ; ici il ne l'est pas.
+
+Le fichier est reconstruit par `experiments/gate/freeze_sample.py`, qui rejoue
+le tirage d'origine à partir des 76 lignes présentes à ce moment-là, et qui
+**vérifie que toute décision déjà payée tombe dans l'échantillon reconstruit** —
+sinon la reconstruction serait fausse et une partie du run serait payée deux
+fois. Les 77 lignes écrites passent ce test.
+
+`run_gate.py --sample-file` lit cette liste et refuse de la combiner avec un
+tirage. Il vérifie aussi que le `prompt_hash` inscrit dans le fichier est celui
+de l'énoncé courant.
+
+**Ce fichier est commité**, contrairement aux observations brutes : c'est lui
+qui rend l'échantillon vérifiable. Il ne contient que des identifiants d'appels
+d'outils, aucun contenu.
+
+Composition des 400 : **janus 354, tenor 46** — 88,5 % / 11,5 %, contre
+88,6 % / 11,4 % sur les 569.
+
 Les 76 premières, elles, ne sont pas un tirage aléatoire — ce sont les 76
 premières lignes du fichier. **L'échantillon des 400 est donc un mélange de
 76 décisions consécutives et de 324 tirées au hasard**, ce qui n'est pas un
