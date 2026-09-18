@@ -1,5 +1,6 @@
 # Janus
 
+[![tests](https://github.com/FirasSX914/Janus/actions/workflows/tests.yml/badge.svg)](https://github.com/FirasSX914/Janus/actions/workflows/tests.yml)
 [![PyPI version](https://img.shields.io/pypi/v/janus-decide.svg)](https://pypi.org/project/janus-decide/)
 [![License: MIT](https://img.shields.io/pypi/l/janus-decide.svg)](https://github.com/FirasSX914/Janus/blob/main/LICENSE)
 [![Python versions](https://img.shields.io/pypi/pyversions/janus-decide.svg)](https://pypi.org/project/janus-decide/)
