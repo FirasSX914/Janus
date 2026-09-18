@@ -135,6 +135,35 @@ def report(out: io.StringIO, rows: list[dict], label: str, paired: bool) -> None
                   f"Jev={r['prediction']:<8s} reference={r['reference']}\n")
 
 
+def stratified(out: io.StringIO, rows: list[dict]) -> None:
+    """Accord par palier A CLASSE PREDITE CONSTANTE.
+
+    Ajoutee au protocole avant le run de reference : les deux paliers hauts ne
+    contiennent que des ALLOW, donc l'accord global et la classe predite sont
+    confondus. A classe constante, si la confiance porte une information
+    propre, l'accord doit encore monter avec elle.
+
+    Descriptive : elle s'ajoute au critere preenregistre, ne le remplace pas.
+    """
+    out.write(f"\n{'=' * 66}\nSTRATIFIED BY PREDICTED CLASS   (added before the "
+              f"reference run)\n{'=' * 66}\n")
+    for label in ("ALLOW", "CONFIRM"):
+        subset = [r for r in rows if r["prediction"] == label]
+        out.write(f"\n  Jev predicted {label}  n={len(subset)}\n")
+        if not subset:
+            continue
+        for tier, count, agreed, (lo, hi) in tier_rows(subset):
+            line = f"    {tier:14s} {count:4d}"
+            if count:
+                line += f"   {agreed / count:6.1%}   [{pct(lo)}, {pct(hi)}]"
+                if count < MIN_TIER:
+                    line += f"   (n<{MIN_TIER}, not interpreted)"
+            out.write(line + "\n")
+        if label == "CONFIRM":
+            out.write("    -> not interpretable: the tiers are degenerate, "
+                      "almost every CONFIRM sits in one of them.\n")
+
+
 def verdict(out: io.StringIO, rows: list[dict]) -> None:
     tiers = {label: (count, agreed, ci) for label, count, agreed, ci in tier_rows(rows)}
     high, low = tiers["[0.95, 1.00]"], tiers["[0.00, 0.80)"]
@@ -196,6 +225,7 @@ def main() -> None:
         report(out, [r for r in rows if r["source"] == source], f"SOURCE: {source}", paired)
     report(out, rows, "COMBINED", paired)
     if paired:
+        stratified(out, rows)
         verdict(out, rows)
 
     text = out.getvalue()

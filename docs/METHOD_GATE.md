@@ -407,6 +407,54 @@ le rapport. Un critère qui dit `flat` sur un tableau qui montre une pente est
 publié comme tel : le désaccord entre les deux est une information, et le
 lecteur voit les mêmes chiffres que nous.
 
+## Analyse stratifiée — ajoutée AVANT le run de référence
+
+**Date de l'ajout : 2026-09-18, après la passe Jev seule, avant le premier
+appel au modèle de référence.** Aucune donnée d'accord n'existait quand cette
+section a été écrite : le fichier de la référence n'avait pas une ligne. Le
+confondant qu'elle corrige se voit **sur la passe Jev seule**, sans jamais
+regarder un accord. Ce n'est donc pas un ajustement après coup, et le commit
+qui porte cette section précède le commit qui portera les résultats.
+
+Le critère d'arrêt, lui, n'est pas modifié.
+
+### Le confondant
+
+Mesuré sur les 569 décisions de la passe Jev :
+
+| palier | n | ALLOW | CONFIRM |
+|---|---|---|---|
+| `[0.95, 1.00]` | 134 | **100,0 %** | 0,0 % |
+| `[0.90, 0.95)` | 77 | **100,0 %** | 0,0 % |
+| `[0.80, 0.90)` | 72 | 94,4 % | 5,6 % |
+| `[0.00, 0.80)` | 286 | 67,8 % | 32,2 % |
+
+Les deux paliers hauts ne contiennent **que** des `ALLOW`. Les 96 `CONFIRM` sont
+tous sous 0,90, et 92 sous 0,80. Confiance et classe prédite sont donc
+confondues : le critère compare un palier pur `ALLOW` à un palier mixte.
+
+Si le modèle de référence dit majoritairement `ALLOW`, un verdict `usable`
+pourrait ne rien dire d'autre que « les deux modèles disent `ALLOW` la plupart
+du temps ». Sans la stratification, ce verdict n'est pas interprétable.
+
+### L'analyse ajoutée
+
+**L'accord par palier, sur le sous-ensemble `ALLOW` uniquement.** À classe
+prédite constante, si la confiance porte une information propre, l'accord doit
+encore monter avec elle. Sinon, la relation observée sur l'ensemble n'est qu'un
+reflet de la classe.
+
+Effectifs disponibles : 134 / 77 / 68 / 194 — les quatre paliers restent
+au-dessus du minimum de 10, le test est donc faisable.
+
+**Le symétrique sur `CONFIRM` n'est pas faisable** : 92 de ses 96 décisions
+tombent dans le seul palier `[0.00, 0.80)`, et les trois autres paliers comptent
+0, 0 et 4 décisions. Il est rapporté pour mémoire, jamais interprété.
+
+Cette analyse est **descriptive et s'ajoute** au critère préenregistré : elle ne
+le remplace pas, ne le renverse pas, et ne change pas la règle de décision. Les
+deux sont publiés côte à côte.
+
 ## Budget
 
 Tarif DeepSeek V4-Pro relevé le 2026-09-17 : `0,022 / 0,66 / 1,98 $` par million
@@ -449,6 +497,12 @@ Le coût de Jev est compté à part et n'entre pas dans ce budget.
   raison.
 - Les arguments tronqués à 2 000 caractères privent les deux modèles de la fin
   des gros arguments. Le nombre de décisions concernées est rapporté.
+- **Portée de ce que « confiance » désigne ici.** Sur cette tâche binaire, la
+  confiance retournée par Jev est empiriquement équivalente à la marge entre les
+  deux probabilités de classe, à l'arrondi près (écart maximal mesuré : 0,01).
+  Par conséquent, cette expérience évalue essentiellement la valeur prédictive
+  d'un score de séparation binaire, et ne permet pas d'extrapoler directement les
+  résultats à la calibration multiclasses.
 - Les observations non résolues sont exclues, pas réparées. Si leur part est
   importante, l'échantillon analysé n'est plus le trafic collecté, et le
   rapport doit le dire avant tout autre chiffre.
