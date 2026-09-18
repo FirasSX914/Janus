@@ -78,7 +78,7 @@ def cmd_measure(args) -> int:
     policy.write(out)
     _print_report(result)
     print(f"\npolicy written to {out}")
-    print(f"raw JSONL kept in {artifacts} — a policy should be auditable.")
+    print(f"raw JSONL kept in {artifacts} - a policy should be auditable.")
     return 0
 
 
@@ -101,17 +101,18 @@ def _print_report(result) -> None:
     print("\n" + "=" * 68)
     print("OPERATING POINTS, one per observed confidence level")
     print("=" * 68)
-    print(f"  {'rule':<26} {'thr':>5} {'cov':>7} {'acc':>7} {'cost':>10}")
+    print(f"  {'rule':<26} {'thr':>5} {'cov':>7} {'acc':>7} {'cost':>10} {'p50':>8}")
     for point in result.sweep:
-        threshold = "—" if point.threshold is None else f"{point.threshold:.2f}"
+        threshold = "-" if point.threshold is None else f"{point.threshold:.2f}"
         print(f"  {point.rule:<26} {threshold:>5} {point.coverage:>6.1%} "
-              f"{point.accuracy:>6.1%} {_fmt(point.cost_total):>10}")
+              f"{point.accuracy:>6.1%} {_fmt(point.cost_total):>10} "
+              f"{point.latency_p50_ms:>6.0f}ms")
 
     print("\n" + "=" * 68)
     print(f"VERDICT: {result.verdict.upper().replace('_', ' ')}")
     print("=" * 68)
     print(f"  rule      : {policy.rule}")
-    print(f"  threshold : {policy.threshold if policy.threshold is not None else '—'}")
+    print(f"  threshold : {policy.threshold if policy.threshold is not None else '-'}")
     print(f"  reason    : {policy.reason}")
     baselines = policy.operating_point.get("baselines", {})
     print(f"  baselines : primary only {baselines.get('primary_only', float('nan')):.1%}, "
@@ -187,7 +188,7 @@ def cmd_explain(args) -> int:
     if primary is not None:
         print(f"Primary: {primary.model_id}")
         print(f"Prediction: {primary.label}")
-        print(f"Confidence: {primary.confidence if primary.confidence is not None else '—'}")
+        print(f"Confidence: {primary.confidence if primary.confidence is not None else '-'}")
         print()
     if policy.threshold is not None:
         print(f"Threshold: {policy.threshold}")

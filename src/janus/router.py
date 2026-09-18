@@ -139,27 +139,4 @@ class Router:
         )
 
 
-class AsyncRouter:
-    """Variante asynchrone minimale : meme politique, meme regles.
-
-    Elle attend des fournisseurs exposant `aask`. Aucun backend livre ne le fait
-    encore ; la classe existe pour que l'API publique soit stable, pas pour
-    promettre une implementation asynchrone de chaque backend.
-    """
-
-    def __init__(self, policy: Policy, *, primary, fallback=None,
-                 on_drift: OnDrift = "raise") -> None:
-        self._sync = Router(policy, primary=primary, fallback=fallback, on_drift=on_drift)
-        self.policy = policy
-
-    async def decide(self, input: str, question: Question) -> Decision:
-        primary = self._sync.primary
-        if not hasattr(primary, "aask"):
-            raise NotImplementedError(
-                f"{type(primary).__name__} has no `aask`; use the synchronous Router")
-        raise NotImplementedError(
-            "no shipped backend implements `aask` yet. Implement it on your "
-            "provider and this router will use it.")
-
-
-__all__ = ["Router", "AsyncRouter", "NoPolicyError", "StalePolicyError"]
+__all__ = ["Router", "NoPolicyError", "StalePolicyError"]

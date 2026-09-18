@@ -26,14 +26,14 @@ from .policy import (InvalidPolicyError, NoPolicyError, Policy, PolicyError,
                      StalePolicyError)
 from .providers.base import Provider, prompt_hash
 from .providers.registry import register, resolve
-from .router import AsyncRouter, Router
+from .router import Router
 from .types import (Answer, CalibrationReport, Decision, LevelRow, Measurement,
                     OperatingPoint, Question)
 
 __version__ = "0.1.0"
 
 __all__ = [
-    "Router", "AsyncRouter", "measure", "Policy", "Question",
+    "Router", "measure", "Policy", "Question",
     "Answer", "Decision", "Measurement", "LevelRow", "OperatingPoint",
     "CalibrationReport", "Provider", "resolve", "register", "prompt_hash",
     "question_from_json", "question_from_module",

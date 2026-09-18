@@ -19,6 +19,7 @@ Trois regles que la mesure a etablies et qui gouvernent ce module :
 
 from __future__ import annotations
 
+import statistics
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -38,6 +39,8 @@ class Row:
     fallback_ok: bool
     primary_cost: float | None
     fallback_cost: float | None
+    primary_latency_ms: float = 0.0
+    fallback_latency_ms: float = 0.0
 
 
 def _total(costs: Sequence[float | None]) -> float | None:
@@ -53,6 +56,9 @@ def simulate(rows: Sequence[Row], threshold: float) -> OperatingPoint:
     escalated = [r for r in rows if round_confidence(r.confidence) < threshold]
     correct = sum(r.primary_ok for r in kept) + sum(r.fallback_ok for r in escalated)
     cost = _total([r.primary_cost for r in rows] + [r.fallback_cost for r in escalated])
+    # Une escalade paie les deux latences : le primary est interroge d'abord.
+    latencies = ([r.primary_latency_ms for r in kept]
+                 + [r.primary_latency_ms + r.fallback_latency_ms for r in escalated])
     return OperatingPoint(
         threshold=threshold,
         rule="primary_if_confidence_ge",
@@ -61,6 +67,7 @@ def simulate(rows: Sequence[Row], threshold: float) -> OperatingPoint:
         n_escalated=len(escalated),
         accuracy=correct / len(rows),
         cost_total=cost if cost is not None else float("nan"),
+        latency_p50_ms=statistics.median(latencies) if latencies else 0.0,
     )
 
 
@@ -69,10 +76,13 @@ def single_model(rows: Sequence[Row], which: str) -> OperatingPoint:
     if which == "primary":
         correct = sum(r.primary_ok for r in rows)
         cost = _total([r.primary_cost for r in rows])
+        latencies = [r.primary_latency_ms for r in rows]
         coverage, escalation = 1.0, 0.0
     else:
         correct = sum(r.fallback_ok for r in rows)
         cost = _total([r.fallback_cost for r in rows])
+        # `always_fallback` n'interroge pas le primary : sa latence non plus.
+        latencies = [r.fallback_latency_ms for r in rows]
         coverage, escalation = 0.0, 1.0
     return OperatingPoint(
         threshold=None,
@@ -82,6 +92,7 @@ def single_model(rows: Sequence[Row], which: str) -> OperatingPoint:
         n_escalated=len(rows) if which == "fallback" else 0,
         accuracy=correct / len(rows),
         cost_total=cost if cost is not None else float("nan"),
+        latency_p50_ms=statistics.median(latencies) if latencies else 0.0,
     )
 
 

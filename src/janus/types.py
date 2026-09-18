@@ -92,10 +92,9 @@ class OperatingPoint:
     n_escalated: int
     accuracy: float
     cost_total: float
-
-    @property
-    def cost_per_1000(self) -> float:
-        return self.cost_total
+    #: Mediane de la latence bout en bout d'une decision. Une escalade cumule
+    #: les deux appels : on interroge le primary avant de pouvoir router.
+    latency_p50_ms: float = 0.0
 
 
 @dataclass(frozen=True)

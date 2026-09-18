@@ -22,6 +22,9 @@ dependencies = ["numpy>=1.24"]
 
 [project.optional-dependencies]
 typesafe = ["typesafe-sdk"]
+# DeepSeek parle le protocole OpenAI : meme dependance, nom explicite pour
+# qui installe Janus afin de l'utiliser.
+deepseek = ["openai"]
 openai = ["openai"]
 anthropic = ["anthropic"]
 report = ["matplotlib>=3.7"]

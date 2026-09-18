@@ -40,6 +40,110 @@ The protocol was frozen before any result was looked at
 ([commit `2384a6b`](../../commit/2384a6b)). The dataset, the raw results and the
 analysis code are all in this repository.
 
+## Quickstart
+
+Five minutes, on your own data. **Janus ships no default threshold: it measures one.**
+
+**1. Install**
+
+```bash
+pip install "janus-decide[typesafe,deepseek]"
+```
+
+The bare package depends only on numpy; each backend is an extra. DeepSeek speaks the
+OpenAI protocol, so `[deepseek]` and `[openai]` pull the same client.
+
+**2. Prepare a labelled JSONL** — one object per line, three fields:
+
+```json
+{"id": 0, "text": "I lost my card", "gold_label": "lost_or_stolen_card"}
+{"id": 1, "text": "when does my card arrive", "gold_label": "card_arrival"}
+```
+
+and a label file naming every class you allow:
+
+```json
+{
+  "instructions": "Which banking intent does this customer query express?",
+  "labels": {
+    "lost_or_stolen_card": "The card has been lost or stolen.",
+    "card_arrival": "Chasing a card that was already ordered and has not arrived."
+  }
+}
+```
+
+Start with a few hundred labelled rows; larger samples generally give more stable
+estimates. Ours were 500.
+
+**3. Measure**
+
+```bash
+janus measure \
+  --dataset mydata.jsonl --labels mylabels.json \
+  --primary typesafe:jev-latest \
+  --fallback deepseek:deepseek-v4-pro \
+  --out janus.json
+```
+
+Try `--sample 20 --seed 1` first: it checks the wiring and the real cost per call
+before you spend on the full set. `--budget 2.00` stops the run if the projected cost
+goes over. An interrupted run resumes by id without re-paying for a completed call.
+
+**4. Read the table.** This is the real output for the Banking77 data in this
+repository:
+
+```
+  rule                         thr     cov     acc       cost      p50
+  always_primary                 - 100.0%  77.8%     0.0507    296ms
+  always_fallback                -   0.0%  78.8%     0.2207   2269ms
+  primary_if_confidence_ge    0.67  88.4%  80.2%     0.1033    302ms
+
+VERDICT: ROUTE
+  rule      : primary_if_confidence_ge
+  threshold : 0.67
+  reason    : beats the better single model by +1.4%
+  ceiling   : 83.2% (this pair of models, not the task)
+```
+
+The full sweep is written to the measurement report.
+
+Three columns decide it. **acc** — routing is more accurate here than either model on
+its own. **cost** — it costs less than half of the fallback alone. **p50** — the median
+decision still answers in about 300 ms, because most requests never escalate; the
+fallback alone takes 2.3 seconds. If you are building anything interactive, that last
+column matters before the other two.
+
+`measure` can also conclude **DO NOT ROUTE**, which is what it does on the second
+dataset in this repository: no threshold beat the better single model, so the policy
+runs that model alone rather than paying for an escalation that buys nothing.
+
+**5. Route from Python**
+
+```python
+from janus import Router, question_from_json, resolve
+
+question = question_from_json("mylabels.json")
+router = Router.from_file(
+    "janus.json",
+    primary=resolve("typesafe:jev-1.13.0"),     # the resolved version, not the alias
+    fallback=resolve("deepseek:deepseek-v4-pro"),
+)
+
+decision = router.decide(input="I lost my card", question=question)
+decision.label       # "lost_or_stolen_card"
+decision.source      # "primary" | "fallback"
+decision.escalated   # False
+decision.cost_usd    # from real tokens; None when the rate is unknown
+```
+
+Pin the resolved version here rather than an alias: an alias moves when a release
+ships, and a threshold measured on one version does not transfer to the next. Aliases
+are fine in `janus measure`, which records whatever the API actually answered.
+
+When the models do change under you, `janus check` says so, and `Router` raises
+instead of quietly applying a threshold measured on something else. `janus explain`
+shows why one input escalated and another did not.
+
 ## Results — Banking77
 
 500 examples from the Banking77 test split, 77 intent labels, one call per example.

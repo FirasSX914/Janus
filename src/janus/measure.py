@@ -164,7 +164,9 @@ def measure(*, examples: Sequence[Mapping], question: Question,
             primary_ok=p["prediction"] == p["gold_label"],
             fallback_ok=by_id[p["id"]]["prediction"] == by_id[p["id"]]["gold_label"],
             primary_cost=p["cost_usd"],
-            fallback_cost=by_id[p["id"]]["cost_usd"])
+            fallback_cost=by_id[p["id"]]["cost_usd"],
+            primary_latency_ms=p.get("latency_ms", 0.0),
+            fallback_latency_ms=by_id[p["id"]].get("latency_ms", 0.0))
         for p in primary_rows if p["id"] in by_id
     ]
     if not rows:
