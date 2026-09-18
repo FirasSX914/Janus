@@ -802,7 +802,7 @@ d'optimiser pour une classification de vérité terrain — le billet d'annonce 
 de même « We don't optimize for a ground truth classification ».
 
 > **TypeSafe's reference methodology evaluates agreement with its reference
-> models, whereas calibre evaluates predictions against human-labelled ground
+> models, whereas Janus evaluates predictions against human-labelled ground
 > truth.**
 
 C'est un contraste de méthode, pas un reproche : les deux approches répondent à

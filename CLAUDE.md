@@ -1,4 +1,4 @@
-# calibre
+# Janus
 
 Mesure la calibration de modèles de décision (Jev, TypeSafe AI) et simule des cascades Jev → frontier.
 

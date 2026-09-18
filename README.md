@@ -1,4 +1,4 @@
-# calibre
+# Janus
 
 > **Jev says it's 100% sure. Is it?** On 500 Banking77 examples it is right 95.8% of
 > the time. On 500 Web of Science abstracts, 76.7%.
@@ -450,7 +450,7 @@ GPT-6 Astra and Claude Fable 5.1, both at high thinking", and they state that th
 "assume that the code is correct, and measure against the current smartest large
 models" rather than optimising for a ground-truth classification.
 **TypeSafe's reference methodology evaluates agreement with its reference models,
-whereas calibre evaluates predictions against human-labelled ground truth.** These
+whereas Janus evaluates predictions against human-labelled ground truth.** These
 answer different questions and neither substitutes for the other.
 
 Jev is also available on [Vercel's AI Gateway](https://vercel.com/changelog/typesafe-ai-jev-now-available-on-ai-gateway)
