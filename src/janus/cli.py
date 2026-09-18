@@ -42,6 +42,17 @@ def _fmt(value: float | None, suffix: str = "") -> str:
     return "unknown" if value is None or value != value else f"{value:.4f}{suffix}"
 
 
+def _delta(value: float | None, base: float | None) -> str:
+    """Ecart relatif a une baseline, en pourcentage signe.
+
+    Rendu "n/a" plutot que 0 quand la baseline manque ou vaut zero : un ecart
+    qu'on ne peut pas calculer ne doit pas s'afficher comme un ecart nul.
+    """
+    if value is None or base in (None, 0) or value != value or base != base:
+        return "n/a"
+    return f"{(value - base) / base:+.0%}"
+
+
 # ------------------------------------------------------------------- measure
 def cmd_measure(args) -> int:
     question = _load_question(args)
@@ -76,13 +87,13 @@ def cmd_measure(args) -> int:
 
     policy = result.policy
     policy.write(out)
-    _print_report(result)
+    _print_report(result, top=args.top)
     print(f"\npolicy written to {out}")
     print(f"raw JSONL kept in {artifacts} - a policy should be auditable.")
     return 0
 
 
-def _print_report(result) -> None:
+def _print_report(result, top: int | None = None) -> None:
     policy, report = result.policy, result.calibration
     print("\n" + "=" * 68)
     print("CALIBRATION OF THE PRIMARY")
@@ -102,25 +113,86 @@ def _print_report(result) -> None:
     print("OPERATING POINTS, one per observed confidence level")
     print("=" * 68)
     print(f"  {'rule':<26} {'thr':>5} {'cov':>7} {'acc':>7} {'cost':>10} {'p50':>8}")
-    for point in result.sweep:
+
+    def render(point) -> str:
         threshold = "-" if point.threshold is None else f"{point.threshold:.2f}"
-        print(f"  {point.rule:<26} {threshold:>5} {point.coverage:>6.1%} "
-              f"{point.accuracy:>6.1%} {_fmt(point.cost_total):>10} "
-              f"{point.latency_p50_ms:>6.0f}ms")
+        return (f"  {point.rule:<26} {threshold:>5} {point.coverage:>6.1%} "
+                f"{point.accuracy:>6.1%} {_fmt(point.cost_total):>10} "
+                f"{point.latency_p50_ms:>6.0f}ms")
+
+    routed = [p for p in result.sweep if p.threshold is not None]
+    # Le point qui porte la decision. Quand rien n'est route, c'est le meilleur
+    # cas POUR le routage -- meilleure accuracy, et a egalite celui qui escalade
+    # le plus -- car c'est lui qui documente ce que router aurait coute. Un seuil
+    # a 100 % de couverture n'escalade rien : c'est always_primary sous un autre
+    # nom, il ne dit rien de la decision.
+    chosen = next((i for i, p in enumerate(routed)
+                   if p.threshold == policy.threshold), None)
+    if chosen is None and routed:
+        live = [i for i, p in enumerate(routed) if 0.0 < p.coverage < 1.0] \
+            or list(range(len(routed)))
+        chosen = max(live, key=lambda i: (routed[i].accuracy, -routed[i].coverage))
+
+    shown = set(range(len(routed)))
+    if top is not None and top < len(routed):
+        half = (top - 1) // 2
+        start = max(0, min(chosen - half, len(routed) - top))
+        shown = set(range(start, start + top))
+
+    elided = 0
+    for point in result.sweep:
+        if point.threshold is None:          # always_primary / always_fallback
+            print(render(point))
+            continue
+        if routed.index(point) in shown:
+            if elided:
+                print(f"  ... {elided} more thresholds, written to the report")
+                elided = 0
+            print(render(point))
+        else:
+            elided += 1
+    if elided:
+        print(f"  ... {elided} more thresholds, written to the report")
 
     print("\n" + "=" * 68)
     print(f"VERDICT: {result.verdict.upper().replace('_', ' ')}")
     print("=" * 68)
-    print(f"  rule      : {policy.rule}")
-    print(f"  threshold : {policy.threshold if policy.threshold is not None else '-'}")
-    print(f"  reason    : {policy.reason}")
-    baselines = policy.operating_point.get("baselines", {})
-    print(f"  baselines : primary only {baselines.get('primary_only', float('nan')):.1%}, "
-          f"fallback only {baselines.get('fallback_only', float('nan')):.1%}")
-    print(f"  ceiling   : {policy.ceiling.get('oracle_accuracy', float('nan')):.1%} "
+
+    singles = {p.rule: p for p in result.sweep if p.threshold is None}
+    primary_only = singles.get("always_primary")
+    fallback_only = singles.get("always_fallback")
+
+    if policy.route:
+        point = next(p for p in routed if p.threshold == policy.threshold)
+        # On route : la baseline qui compte est le modele qu'on evite d'appeler.
+        against, label = fallback_only, "fallback only"
+        best_single = max(primary_only.accuracy, fallback_only.accuracy)
+        print(f"  threshold  : {policy.threshold}")
+        print(f"  accuracy   : {point.accuracy:.1%}  "
+              f"({point.accuracy - best_single:+.1%} vs best single model)")
+    else:
+        point = routed[chosen] if routed else None
+        # On ne route pas : la baseline est le modele qui tourne seul.
+        against, label = primary_only, "always_primary"
+        if point is not None:
+            print(f"  best routed point would be {point.threshold:.2f}")
+            print(f"  accuracy   : {point.accuracy:.1%}  "
+                  f"({point.accuracy - primary_only.accuracy:+.1%} vs {label})")
+
+    if point is not None and against is not None:
+        money = "unknown" if point.cost_total is None else f"${point.cost_total:.4f}"
+        print(f"  cost       : {money}  "
+              f"({_delta(point.cost_total, against.cost_total)} vs {label})")
+        if policy.route:
+            print(f"  latency p50: {point.latency_p50_ms:.0f}ms  "
+                  f"({_delta(point.latency_p50_ms, against.latency_p50_ms)} vs {label})")
+            print(f"  escalation : {1 - point.coverage:.1%} of traffic")
+
+    print(f"  ceiling    : {policy.ceiling.get('oracle_accuracy', float('nan')):.1%} "
           f"(this pair of models, not the task)")
     if not policy.route:
-        print("\n  Routing was measured and did not pay here. That is a result, not a\n"
+        print("\n  -> routing costs more for the same accuracy.")
+        print("  Routing was measured and did not pay here. That is a result, not a\n"
               "  failure: the policy runs the better single model instead.")
 
 
@@ -234,6 +306,9 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--seed", type=int, default=None)
     m.add_argument("--budget", type=float, default=None,
                    help="stop if the projected cost exceeds this")
+    m.add_argument("--top", type=int, default=None,
+                   help="show only N routed thresholds around the chosen one; "
+                        "the full sweep always goes to the report")
     m.add_argument("--estimate", action="store_true", help="print the plan, call nothing")
     m.set_defaults(func=cmd_measure)
 

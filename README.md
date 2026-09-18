@@ -122,7 +122,7 @@ The same pipeline was run on two labelled datasets, 500 examples each, and **no
 routing parameter carried over**. The optimal threshold moved from 0.67 to 0.37.
 The sign of the accuracy gap between the two models reversed. On one dataset
 routing beat both models on its own; on the other it matched the better one while
-costing 46% more, so the honest answer there was not to route.
+costing 47% more, so the honest answer there was not to route.
 
 A default threshold would therefore be wrong roughly as often as it was right,
 which is the whole reason this tool measures instead of assuming.

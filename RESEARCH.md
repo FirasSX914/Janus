@@ -7,7 +7,7 @@
 >
 > Routing on that signal reaches **80.2% at $0.1033 per 500 decisions** on Banking77,
 > against 78.8% at $0.2207 for DeepSeek V4-Pro alone. On Web of Science the same
-> routing **ties Jev alone — 52.8% either way — for 46% more money**.
+> routing **ties Jev alone — 52.8% either way — for 47% more money**.
 >
 > **Two datasets, opposite outcomes. None of the routing parameters measured on the
 > first held on the second** — not the optimal threshold, not the sign of the accuracy
@@ -87,7 +87,7 @@ dataset changes: 500 abstracts from the WOS-46985 corpus, 145 subject classes ac
 | Oracle | 56.0% | — | — |
 
 **The cascade loses on this dataset.** It reaches 52.8%, which is exactly what Jev
-alone reaches, and it costs $0.1474 against $0.1006 — **46% more for the same
+alone reaches, and it costs $0.1474 against $0.1006 — **47% more for the same
 accuracy**. This is not a neutral outcome: paying more for no gain is a worse
 operating point than not routing at all. On Banking77 the same rule gained 1.4 points
 for roughly half the cost of the fallback. **Without measuring on your own data, you
@@ -301,7 +301,7 @@ examples. A threshold must be re-derived on any new workload, never copied from
 here.
 
 **Whether routing pays is itself dataset-dependent.** It gained 1.4 points for
-about half the cost of the fallback on Banking77, and gained nothing for 46% more
+about half the cost of the fallback on Banking77, and gained nothing for 47% more
 than Jev alone on Web of Science. Both outcomes came out of the identical
 pipeline.
 

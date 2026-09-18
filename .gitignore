@@ -13,3 +13,6 @@ dist/
 # projets qui ne sont pas publies. Seuls les resultats agreges sont commites.
 gate_*.jsonl
 gate_hook_errors.log
+
+# Frames intermediaires de la demo VHS, regenerables.
+.vhs-frames/
