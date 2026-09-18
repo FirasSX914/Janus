@@ -15,11 +15,15 @@ Output results/figures/janus_demo.gif
 # verifie avec un shim qui journalise les appels, le journal reste vide. On lui
 # fait donc ecrire aussi les frames, et on encode derriere :
 #
-#   ffmpeg -y -framerate 20 -i .vhs-frames/frame-text-%05d.png #     -filter_complex "[0:v]crop=1023:1030:0:0,split[a][b];#        [a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3" #     results/figures/janus_demo.gif
+#   ffmpeg -y -framerate 20 -i .vhs-frames/frame-text-%05d.png
+#     -filter_complex "[0:v]crop=770:1006:0:3,pad=842:1078:36:36:color=0x12161c,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3"
+#     results/figures/janus_demo.gif
 #
-# Le crop retire l'espace mort sous la sortie la plus courte des deux.
-#
-# Sur une machine ou VHS emet le GIF lui-meme, la premiere ligne suffit.
+# Le crop/pad recadre sur la boite englobante REELLE du texte (770x1006) et la
+# recentre avec 36 px de marge : la grille du terminal ne tombe jamais pile sur
+# la largeur des lignes, et xterm.js colle le contenu en haut a gauche. Ces
+# valeurs viennent d'une mesure des frames, pas d'une estimation ; les remesurer
+# si la sortie change de taille.
 Output .vhs-frames/
 
 Require python
@@ -27,9 +31,9 @@ Require python
 Set Shell powershell
 Set FontFamily "Consolas"
 Set FontSize 20
-Set Width 1100
-Set Height 1180
-Set Padding 24
+Set Width 880
+Set Height 1120
+Set Padding 36
 Set Framerate 20
 Set TypingSpeed 28ms
 Set Theme { "name": "janus", "background": "#12161c", "foreground": "#d5dae1", "cursor": "#7aa2f7", "selection": "#2a3040", "black": "#12161c", "red": "#f7768e", "green": "#9ece6a", "yellow": "#e0af68", "blue": "#7aa2f7", "magenta": "#bb9af7", "cyan": "#7dcfff", "white": "#d5dae1", "brightBlack": "#7f8a99", "brightRed": "#f7768e", "brightGreen": "#9ece6a", "brightYellow": "#e0af68", "brightBlue": "#7aa2f7", "brightMagenta": "#bb9af7", "brightCyan": "#7dcfff", "brightWhite": "#ffffff" }
