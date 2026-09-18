@@ -4,9 +4,9 @@ Janus sends each decision to a small model or to a larger one, according to how
 confident the small model is. It measures where that line sits on your data
 before it routes anything. **Janus ships no default threshold: it measures one.**
 
-[![`janus measure` on 500 Banking77 examples: Jev is 77.8% accurate but 90.7% confident, a 12.9-point gap over 63 observed confidence levels. The sweep picks threshold 0.67, which reaches 80.2% accuracy for $0.1033 -- better than either model alone -- and keeps the median decision at 302ms against 2269ms for the fallback alone.](https://raw.githubusercontent.com/FirasSX914/Janus/main/results/figures/cli_measure.png)](https://github.com/FirasSX914/Janus/blob/main/RESEARCH.md)
+[![`janus measure` replayed on the two datasets in this repository. On Banking77 it reaches 80.2% at threshold 0.67 -- better than either model alone -- for $0.1033 and a 302ms median decision, against $0.2207 and 2269ms for the fallback alone. On Web of Science no threshold beats the better single model, and the verdict is DO NOT ROUTE.](https://raw.githubusercontent.com/FirasSX914/Janus/main/results/figures/janus_demo.gif)](https://github.com/FirasSX914/Janus/blob/main/RESEARCH.md)
 
-<sub>Real output, replayed from the raw JSONL committed in this repository.</sub>
+<sub>Real output, replayed from the raw JSONL committed in this repository. No model is called.</sub>
 
 ```bash
 pip install janus-decide
@@ -148,9 +148,30 @@ and writes a policy plus its report.
 | `--sample N --seed S` | smoke test on N random rows; both flags are required together |
 | `--budget` | stop if the projected cost goes over |
 | `--estimate` | print the plan, call nothing |
+| `--top N` | show only N routed thresholds around the chosen one; the full sweep still goes to the report |
+| `--replay` | re-measure from raw JSONL already recorded; calls nothing |
+| `--task` | replay one of the two measurements committed in this repository; implies `--replay` |
+
+`--color auto|always|never` sits on `janus` itself. `auto` follows the terminal,
+and `NO_COLOR` wins over `FORCE_COLOR`.
 
 The run writes one line at a time, flushed and fsynced, and resumes by id. It
 refuses to resume a file whose statement has changed rather than mix two prompts.
+
+**`--replay`** re-runs the whole measurement offline, from raw JSONL a previous
+run wrote. It is how you sweep to a different `--target-accuracy` without paying
+for a single new call. The providers it installs raise if they are asked to
+answer, so a replay that is missing a row fails loudly instead of quietly
+calling a model; and it writes no policy, because nothing new was measured.
+
+```bash
+janus measure --replay --task banking77 --top 3   # the demo above, offline
+```
+
+`--task` reads the datasets and raw runs committed in the repository, which the
+installed package does not carry, so it needs a clone. It says so plainly if the
+files are not there. `--replay` on its own works anywhere, on your own
+`--dataset` and `--raw-dir`.
 
 ### `janus check`
 
