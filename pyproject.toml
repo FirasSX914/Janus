@@ -16,7 +16,12 @@ classifiers = [
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Typing :: Typed",
 ]
 dependencies = ["numpy>=1.24"]
 
@@ -34,8 +39,17 @@ all = ["typesafe-sdk", "openai", "anthropic", "matplotlib>=3.7"]
 janus = "janus.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/FirasSX914/janus"
-Source = "https://github.com/FirasSX914/janus"
+Homepage = "https://github.com/FirasSX914/Janus"
+Source = "https://github.com/FirasSX914/Janus"
+Issues = "https://github.com/FirasSX914/Janus/issues"
+Method = "https://github.com/FirasSX914/Janus/blob/main/docs/METHOD.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/janus"]
+
+# L'archive source ne porte que le paquet et ses tests. Les donnees et les
+# resultats de l'experience font plusieurs megaoctets et vivent dans le depot,
+# pas dans une distribution destinee a etre installee. Les tests qui les lisent
+# se declarent "skipped" en leur absence.
+[tool.hatch.build.targets.sdist]
+include = ["/src/janus", "/tests", "/README.md", "/LICENSE", "/pyproject.toml"]

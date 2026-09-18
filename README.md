@@ -12,7 +12,7 @@
 > gap between the two models, not the size or the accuracy of the saturated confidence
 > level, and not whether routing paid for itself at all.
 
-![Accuracy vs cost on 500 Banking77 examples. Each blue dot is one confidence threshold. Jev alone sits at 77.8% for $0.051, DeepSeek alone at 78.8% for $0.221, and routing at threshold 0.67 reaches 80.2% for $0.103 with 58 DeepSeek calls.](results/figures/accuracy_vs_cost.png)
+![Accuracy vs cost on 500 Banking77 examples. Each blue dot is one confidence threshold. Jev alone sits at 77.8% for $0.051, DeepSeek alone at 78.8% for $0.221, and routing at threshold 0.67 reaches 80.2% for $0.103 with 58 DeepSeek calls.](https://raw.githubusercontent.com/FirasSX914/Janus/main/results/figures/accuracy_vs_cost.png)
 
 ## TL;DR
 
@@ -37,7 +37,7 @@ cascade that escalates only what Jev is unsure about. It answers one question:
 model, for a given accuracy target?**
 
 The protocol was frozen before any result was looked at
-([commit `2384a6b`](../../commit/2384a6b)). The dataset, the raw results and the
+([commit `2384a6b`](https://github.com/FirasSX914/Janus/commit/2384a6b)). The dataset, the raw results and the
 analysis code are all in this repository.
 
 ## Quickstart
@@ -175,7 +175,7 @@ Same pipeline, same metrics, same guard rails, same pre-registered targets. Only
 dataset changes: 500 abstracts from the WOS-46985 corpus, 145 subject classes across
 7 parent domains, against Banking77's 77 intent classes.
 
-![Accuracy vs cost on 500 Web of Science abstracts. The routing curve falls as cost rises: Jev alone sits at 52.8% for $0.101, the 0.37 threshold at the same 52.8% for $0.147, and DeepSeek alone at 49.2% for $0.735.](results/figures/accuracy_vs_cost_wos.png)
+![Accuracy vs cost on 500 Web of Science abstracts. The routing curve falls as cost rises: Jev alone sits at 52.8% for $0.101, the 0.37 threshold at the same 52.8% for $0.147, and DeepSeek alone at 49.2% for $0.735.](https://raw.githubusercontent.com/FirasSX914/Janus/main/results/figures/accuracy_vs_cost_wos.png)
 
 | Strategy | Accuracy | Cost / 500 | DeepSeek calls |
 |---|---|---|---|
@@ -208,12 +208,12 @@ fallback reaches 49.2%.
 
 ### Calibration
 
-![Calibration on Web of Science: reported confidence against empirical accuracy by tier, with 95% Wilson intervals. The 1.00 atom holds 129 of 500 rows at 76.7% accuracy.](results/figures/calibration_wos.png)
+![Calibration on Web of Science: reported confidence against empirical accuracy by tier, with 95% Wilson intervals. The 1.00 atom holds 129 of 500 rows at 76.7% accuracy.](https://raw.githubusercontent.com/FirasSX914/Janus/main/results/figures/calibration_wos.png)
 
 Every tier again sits below the diagonal. The saturated level holds **25.8% of the
 traffic at 76.7% accuracy**, where on Banking77 it held 47.6% at 95.8%.
 
-![Risk-coverage on Web of Science: five reachable operating points with 95% Wilson intervals, from 26% coverage at 76.7% accuracy down to full coverage at 52.8%.](results/figures/risk_coverage_wos.png)
+![Risk-coverage on Web of Science: five reachable operating points with 95% Wilson intervals, from 26% coverage at 76.7% accuracy down to full coverage at 52.8%.](https://raw.githubusercontent.com/FirasSX914/Janus/main/results/figures/risk_coverage_wos.png)
 
 Over the 371 rows outside the saturated level, the paired bootstrap separates none of
 the four statistics — all three differences against `confidence` span zero, where on
@@ -305,7 +305,7 @@ the same granularity as `probabilities`. Nothing is representable between 0.99 a
 1.00. On the full run, 44 values out of 38,500 sit up to one double ULP off the
 grid, which is float arithmetic, not extra resolution.
 
-![Calibration: reported confidence against empirical accuracy, by tier, with 95% Wilson intervals. The 1.00 atom is shown apart.](results/figures/calibration.png)
+![Calibration: reported confidence against empirical accuracy, by tier, with 95% Wilson intervals. The 1.00 atom is shown apart.](https://raw.githubusercontent.com/FirasSX914/Janus/main/results/figures/calibration.png)
 
 **Accuracy per observed confidence level** (63 distinct levels; the four largest):
 
@@ -343,7 +343,7 @@ distinguishes; the conventional ten-bin variant is given for comparison with
 published numbers. Brier is the multiclass form, summed over all classes against the
 one-hot target, ranging 0 to 2, and computed on the raw probabilities without
 renormalisation. Intervals are percentile bootstrap over examples, 10,000 draws,
-seed 1729. Definitions in [`docs/METHOD.md`](docs/METHOD.md).
+seed 1729. Definitions in [`docs/METHOD.md`](https://github.com/FirasSX914/Janus/blob/main/docs/METHOD.md).
 
 On Web of Science the label caveat above weighs on these two figures more than on
 accuracy: an abstract whose gold is `Southern blotting` and which receives most of
@@ -630,11 +630,11 @@ Our contribution is an empirical evaluation of confidence-based selective automa
 on a real ground-truth dataset, rather than another implementation of the decision
 layer itself.
 
-Full survey, with what was and was not verified: [`docs/METHOD.md`](docs/METHOD.md).
+Full survey, with what was and was not verified: [`docs/METHOD.md`](https://github.com/FirasSX914/Janus/blob/main/docs/METHOD.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](https://github.com/FirasSX914/Janus/blob/main/LICENSE).
 
-Banking77 is distributed under CC BY 4.0; see [`data/README.md`](data/README.md) for
+Banking77 is distributed under CC BY 4.0; see [`data/README.md`](https://github.com/FirasSX914/Janus/blob/main/data/README.md) for
 provenance and citation.
