@@ -34,6 +34,9 @@ openai = ["openai"]
 anthropic = ["anthropic"]
 report = ["matplotlib>=3.7"]
 all = ["typesafe-sdk", "openai", "anthropic", "matplotlib>=3.7"]
+# De quoi lancer la suite de tests. Aucun fournisseur : les tests ne
+# joignent personne, ils relisent les JSONL commites.
+dev = ["pytest>=7", "pyyaml>=6"]
 
 [project.scripts]
 janus = "janus.cli:main"

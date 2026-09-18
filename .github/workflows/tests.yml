@@ -1,0 +1,38 @@
+name: tests
+
+# Les tests ne joignent aucun fournisseur : ils relisent les JSONL commites et
+# verifient que le paquet reproduit encore les chiffres publies. Donc aucun
+# secret ici, et rien a configurer pour qu'une pull request externe tourne.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      # Les deux bornes de ce que le paquet declare supporter. Un echec sur
+      # l'une ne doit pas masquer l'etat de l'autre.
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Test
+        run: pytest -q
