@@ -48,7 +48,10 @@ Sleep 2s
 Show
 
 # ---------------------------------------------------------------- Banking77
-Type "janus --color always measure --replay --task banking77 --top 1"
+# --top 3 et non 1 : les deux sorties font alors 42 lignes exactement, donc les
+# deux ecrans se centrent dans le meme cadre au lieu que le plus court laisse un
+# trou en bas. On y gagne aussi la pente autour du seuil retenu.
+Type "janus --color always measure --replay --task banking77 --top 3"
 Sleep 400ms
 Enter
 Sleep 800ms
