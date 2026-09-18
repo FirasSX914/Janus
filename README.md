@@ -281,6 +281,69 @@ low-confidence tail.
 On the 238 examples where Jev returned confidence = 1.00, DeepSeek produced the
 identical prediction in 238 out of 238 cases.
 
+## The package
+
+The measurement above is the reason this package exists and the reason for its
+central constraint: **Janus ships no default threshold.** `Router` refuses to run
+without a policy measured on your own data, because neither 0.67 nor 0.37 meant
+anything outside the dataset it came from.
+
+```bash
+pip install janus-decide
+```
+
+Measure a policy on your own labelled data, then run it:
+
+```bash
+janus measure \
+  --dataset mydata.jsonl \
+  --labels  mylabels.json \
+  --primary typesafe:jev-latest \
+  --fallback deepseek:deepseek-v4-pro \
+  --out janus.json
+```
+
+`measure` writes the report every time, keeps the raw JSONL next to the policy so
+it stays auditable, resumes by id if it is interrupted, and refuses to resume a
+file whose statement has changed. It can also conclude **do not route**, which is
+what it does on Web of Science, and then the policy runs the better single model
+instead of paying for an escalation that buys nothing.
+
+```python
+from janus import Router
+
+router = Router.from_file("janus.json", primary=..., fallback=...)
+decision = router.decide(input="I lost my card", question=question)
+
+decision.label       # "lost_or_stolen_card"
+decision.source      # "primary" | "fallback"
+decision.escalated   # False
+decision.cost_usd    # measured from real tokens, None when the rate is unknown
+```
+
+Two more commands: `janus check` says whether the models still answer with the
+versions the policy was measured on, and `janus explain` shows why one input
+escalated and another did not.
+
+```
+$ janus explain janus.json --input "I lost my card"
+
+Primary: jev-1.13.0
+Prediction: lost_or_stolen_card
+Confidence: 0.61
+
+Threshold: 0.67
+Decision: ESCALATE
+
+Fallback: deepseek-v4-pro
+Final label: lost_or_stolen_card
+Source: fallback
+```
+
+`confidence` and `distribution` are `None` when a provider exposes neither, and a
+cost is `None` rather than `0.0` when the rate for the returned model is unknown —
+an unknown must not disappear into a sum.
+
 ## Limitations
 
 **Two datasets, 500 examples each, both in English.** Banking77 intent
@@ -345,21 +408,21 @@ TYPESAFE_API_KEY=...
 DEEPSEEK_API_KEY=...
 EOF
 
-python src/probe.py            # one call, prints the raw response
+python experiments/probe.py            # one call, prints the raw response
 
 # Banking77
-python src/prepare_data.py                                       # rebuilds the dataset
-python src/run_jev.py      --task banking77                      # 500 calls, ~$0.051
-python src/run_frontier.py --task banking77 --provider deepseek  # 500 calls, ~$0.221
-python src/analyze.py      --task banking77
-python src/cascade.py      --task banking77
+python experiments/prepare_data.py                                       # rebuilds the dataset
+python experiments/run_jev.py      --task banking77                      # 500 calls, ~$0.051
+python experiments/run_frontier.py --task banking77 --provider deepseek  # 500 calls, ~$0.221
+python experiments/analyze.py      --task banking77
+python experiments/cascade.py      --task banking77
 
 # Web of Science
-python src/prepare_data_wos.py                                   # downloads ~60 MB
-python src/run_jev.py      --task wos                            # 500 calls, ~$0.101
-python src/run_frontier.py --task wos --provider deepseek        # 500 calls, ~$0.736
-python src/analyze.py      --task wos
-python src/cascade.py      --task wos
+python experiments/prepare_data_wos.py                                   # downloads ~60 MB
+python experiments/run_jev.py      --task wos                            # 500 calls, ~$0.101
+python experiments/run_frontier.py --task wos --provider deepseek        # 500 calls, ~$0.736
+python experiments/analyze.py      --task wos
+python experiments/cascade.py      --task wos
 ```
 
 The runners take `--task`; no dataset is hard-coded in them.
@@ -383,17 +446,20 @@ sha256(wos_500.jsonl)         23954a60f8ac255bdff021f006aa625b9d8742723d8afe5d53
 ## Layout
 
 ```
-src/probe.py             one call, prints the raw unparsed response
-src/tasks.py             task registry: name -> labels module + data file
-src/labels.py            Banking77, 77 labels, id -> name -> description
-src/labels_wos.py        Web of Science, 145 classes, plus each parent domain
-src/prepare_data.py      builds the frozen Banking77 dataset
-src/prepare_data_wos.py  builds the frozen Web of Science dataset
-src/run_jev.py           Jev on a task's 500 -> JSONL
-src/providers.py         frontier backends behind one interface
-src/run_frontier.py      a frontier backend on a task's 500 -> JSONL
-src/analyze.py           calibration, risk-coverage, figures
-src/cascade.py           cascade simulation, zero API calls
+src/janus/               the package: Router, measure, policy, providers, CLI
+experiments/             the measurement this package is built on, unchanged
+  probe.py               one call, prints the raw unparsed response
+  tasks.py               task registry: name -> labels module + data file
+  labels.py              Banking77, 77 labels, id -> name -> description
+  labels_wos.py          Web of Science, 145 classes, plus each parent domain
+  prepare_data*.py       build the frozen datasets
+  run_jev.py             Jev on a task's 500 -> JSONL
+  run_frontier.py        a frontier backend on a task's 500 -> JSONL
+  providers.py           frontier backends behind one interface
+  analyze.py             calibration, risk-coverage, figures
+  cascade.py             cascade simulation, zero API calls
+tests/                   the package's invariants, including that it still
+                         reproduces the published numbers from the raw JSONL
 data/                    frozen datasets + provenance
 results/raw/             raw JSONL, one line per example
 results/figures/         figures, regenerated by analyze.py and cascade.py
