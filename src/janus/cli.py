@@ -17,10 +17,14 @@ import os
 import sys
 from pathlib import Path
 
+from . import cost as cost_mod
 from . import labels as labels_mod
 from .measure import BudgetExceeded, measure
 from .policy import Policy, PolicyError
 from .providers.registry import PROVIDERS, resolve
+from .agreement import FORMULA, MIN_TIER, analyse, guard
+from .logmeasure import ask_reference, estimate
+from .logs import LogSpec, observed_decisions, read_log
 from .replay import OfflineProvider, TASKS, resolve_task, stage_artifacts
 from .router import Router
 from .types import Question
@@ -98,6 +102,8 @@ def _points(value: float, base: float, *, lower_is_better: bool = False) -> str:
 
 # ------------------------------------------------------------------- measure
 def cmd_measure(args) -> int:
+    if args.log:
+        return cmd_measure_log(args)
     staged = None
     if args.task:
         # Raccourci vers les deux mesures commitees dans le depot. Il implique
@@ -161,6 +167,178 @@ def cmd_measure(args) -> int:
     print(f"\npolicy written to {out}")
     print(f"raw JSONL kept in {artifacts} - a policy should be auditable.")
     return 0
+
+
+def _rates(model: str) -> tuple[float, float] | None:
+    """(entree, sortie) en $/Mtok pour une estimation AVANT appel.
+
+    Le tarif en cache miss est retenu pour les modeles a cache : une estimation
+    doit majorer, pas flatter.
+    """
+    if model in cost_mod.FLAT_PRICING:
+        return cost_mod.FLAT_PRICING[model]
+    if model in cost_mod.CACHED_PRICING:
+        _hit, miss, out = cost_mod.CACHED_PRICING[model]
+        return miss, out
+    return None
+
+
+def cmd_measure_log(args) -> int:
+    """Mesurer l'accord entre un journal de decisions et un modele de reference.
+
+    Il n'y a pas d'etiquette d'or ici, donc pas de justesse : le rapport parle
+    d'accord, et `guard()` refuse de l'imprimer s'il parle d'autre chose.
+    """
+    if not args.reference:
+        raise SystemExit("--reference is required with --log: the agreement is "
+                         "measured against a model, and it has to be named")
+    spec = LogSpec(input_field=args.input_field,
+                   decision_field=args.decision_field,
+                   confidence_field=args.confidence_field,
+                   id_field=args.id_field)
+    # La question d'abord : un --labels manquant est une erreur plus
+    # fondamentale qu'un nom de champ, et doit se dire en premier.
+    question = _load_question(args)
+    rows = read_log(Path(args.log), spec)
+
+    seen = observed_decisions(rows)
+    unknown = [d for d in seen if d not in question.criteria]
+    if unknown:
+        raise SystemExit(
+            f"the log holds decisions the question does not offer: {unknown}\n"
+            f"  question offers: {sorted(question.criteria)}\n"
+            "The reference must be asked the same closed question the logged "
+            "model answered, otherwise the two are not comparable.")
+
+    artifacts = Path(args.raw_dir) if args.raw_dir else Path(args.out).with_suffix("").parent / "agreement.artifacts"
+    print(f"log        : {args.log}, {len(rows)} decisions")
+    print(f"fields     : {spec.describe()}")
+    print(f"decisions  : " + "  ".join(f"{d} {sum(1 for r in rows if r.decision == d)}"
+                                       for d in seen))
+    print(f"reference  : {args.reference}")
+    print(f"question   : {len(question)} classes")
+    print(f"artifacts  : {artifacts}")
+
+    model = args.reference.split(":", 1)[-1]
+    rates = _rates(model)
+    if rates is None:
+        print(_c(f"\nNo price on file for {model}: the run cannot be estimated, "
+                 "and its cost will be reported as unknown rather than as zero.", "dim"))
+        tokens = None
+    else:
+        tokens, projected = estimate(rows, question, usd_per_mtok_in=rates[0],
+                                     usd_per_mtok_out=rates[1],
+                                     output_tokens=args.output_tokens)
+        print(f"\nestimate   : ~{tokens:,} input tokens, "
+              f"{args.output_tokens} output tokens per decision")
+        print(f"             ${projected:.4f} at {model} list price, no cache")
+        if args.budget is not None and projected > args.budget:
+            raise SystemExit(f"refusing to start: ${projected:.4f} is over the "
+                             f"--budget ${args.budget:.2f}")
+
+    if args.estimate:
+        print("\n--estimate: no call is made. Run without it to measure.")
+        return 0
+    if not args.yes:
+        # Une mesure d'accord appelle la reference sur CHAQUE ligne. On ne
+        # depense pas sans le dire.
+        try:
+            answer = input("\nRun the reference on every decision? [y/N] ").strip().lower()
+        except EOFError:
+            raise SystemExit("not a terminal: pass --yes to confirm the spend")
+        if answer not in ("y", "yes"):
+            return 1
+
+    try:
+        verdicts = ask_reference(rows, question, resolve(args.reference), artifacts,
+                                 budget=args.budget)
+    except BudgetExceeded as error:
+        print(f"\nSTOPPED: {error}", file=sys.stderr)
+        return 2
+    if not verdicts:
+        raise SystemExit("no decision was answered by the reference")
+
+    print(guard(_render_agreement(analyse(verdicts), len(rows))))
+    print(_c(f"raw JSONL kept in {artifacts} - an agreement should be auditable.", "dim"))
+    return 0
+
+
+def _render_agreement(report, n_log: int) -> str:
+    out = ["", "=" * 68, "AGREEMENT WITH THE REFERENCE", "=" * 68,
+           f"  {FORMULA}."]
+    if report.n != n_log:
+        out.append(_c(f"  measured on {report.n} of {n_log} logged decisions "
+                      "(the run stopped early)", "dim"))
+
+    out += ["", f"  logged    : " + "   ".join(
+        f"{k} {v} ({v / report.n:.1%})" for k, v in
+        sorted(report.decisions.items(), key=lambda kv: -kv[1]))]
+    out.append(f"  reference : " + "   ".join(
+        f"{k} {v} ({v / report.n:.1%})" for k, v in
+        sorted(report.reference_decisions.items(), key=lambda kv: -kv[1])))
+    out.append(_c(f"  majority-class baseline: {report.majority_baseline:.1%}"
+                  "  <- what a constant answer would reach", "dim"))
+
+    lo, hi = report.overall_interval
+    beats = report.overall > report.majority_baseline
+    out += ["", f"  overall   : {report.overall:.1%}  [{lo:.1%}, {hi:.1%}]  "
+                + _c(f"{100 * (report.overall - report.majority_baseline):+.1f} points "
+                     "vs baseline", "green" if beats else "red")]
+
+    out += ["", "=" * 68, "BY CONFIDENCE TIER", "=" * 68,
+            _c(f"  {'tier':<14} {'n':>5} {'share':>7} {'agreement':>10}"
+               f"  {'Wilson 95%':>18}", "dim")]
+    for row in report.tiers:
+        line = (f"  {row.label:<14} {row.n:>5} {row.n / report.n:>7.1%} "
+                f"{row.rate:>10.1%}  [{row.interval[0]:>7.1%}, {row.interval[1]:>7.1%}]"
+                if row.n else f"  {row.label:<14} {row.n:>5}")
+        if row.n and not row.interpreted:
+            line += _c(f"  (n<{MIN_TIER}, not interpreted)", "dim")
+        out.append(line)
+
+    out += ["", "=" * 68, "STRATIFIED BY LOGGED DECISION  (not optional)", "=" * 68,
+            _c("  Confidence and the logged class are confounded whenever the high\n"
+               "  tiers hold one class only. At constant class, confidence has to keep\n"
+               "  predicting agreement or it carries nothing of its own.", "dim")]
+    for label, tiers in report.stratified.items():
+        total = sum(t.n for t in tiers)
+        out.append(f"\n  logged {label}  n={total}")
+        for row in tiers:
+            if not row.n:
+                out.append(f"    {row.label:<14} {row.n:>5}")
+                continue
+            line = (f"    {row.label:<14} {row.n:>5} {row.rate:>10.1%}"
+                    f"  [{row.interval[0]:>7.1%}, {row.interval[1]:>7.1%}]")
+            if not row.interpreted:
+                line += _c(f"  (n<{MIN_TIER}, not interpreted)", "dim")
+            out.append(line)
+
+    out += ["", "=" * 68, "THRESHOLD, COVERAGE, COST", "=" * 68,
+            _c(f"  {'thr':>5} {'coverage':>9} {'escalated':>10} "
+               f"{'agreement kept':>15} {'projected cost':>15}", "dim")]
+    shown = [p for p in report.points if p.threshold is None][:1]
+    levels = [p for p in report.points if p.threshold is not None]
+    step = max(1, len(levels) // 8)
+    shown += levels[::step]
+    for point in shown:
+        thr = "-" if point.threshold is None else f"{point.threshold:.2f}"
+        money = "unknown" if point.projected_cost is None else f"${point.projected_cost:.4f}"
+        kept = "n/a" if point.n_kept == 0 else f"{point.agreement_kept:.1%}"
+        out.append(f"  {thr:>5} {point.coverage:>9.1%} {point.escalation_rate:>10.1%} "
+                   f"{kept:>15} {money:>15}")
+    out.append(_c("  Projected cost is production, not measurement: in service the\n"
+                  "  reference is called only on what is escalated.", "dim"))
+    if report.reference_cost_total is not None:
+        out.append(f"  This measurement called it on all {report.n}: "
+                   f"${report.reference_cost_total:.4f}.")
+
+    out += ["", f"  divergences at confidence >= 0.95: {len(report.divergences)}"]
+    for v in sorted(report.divergences, key=lambda v: -v.confidence):
+        out.append(f"    {v.confidence:.2f}  logged={v.decision:<10} "
+                   f"reference={v.reference}")
+    for caveat in report.caveats:
+        out.append(_c(f"  note: {caveat}", "dim"))
+    return "\n".join(out)
 
 
 def _print_report(result, top: int | None = None) -> None:
@@ -396,6 +574,23 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--seed", type=int, default=None)
     m.add_argument("--budget", type=float, default=None,
                    help="stop if the projected cost exceeds this")
+    m.add_argument("--log",
+                   help="JSONL of decisions already taken, with their confidence "
+                        "and no gold label; measures agreement, not correctness")
+    m.add_argument("--reference", help="provider:model to compare the log against")
+    m.add_argument("--input-field", default="text",
+                   help="log field holding what the model saw (default: text)")
+    m.add_argument("--decision-field", default="prediction",
+                   help="log field holding the decision taken (default: prediction)")
+    m.add_argument("--confidence-field", default="confidence",
+                   help="log field holding the confidence (default: confidence)")
+    m.add_argument("--id-field", default=None,
+                   help="log field holding a stable id; the line number otherwise")
+    m.add_argument("--output-tokens", type=int, default=638,
+                   help="output tokens per reference call, for the estimate; 638 is "
+                        "the measured mean for a reasoning model, not a guess")
+    m.add_argument("--yes", action="store_true",
+                   help="skip the confirmation before spending")
     m.add_argument("--replay", action="store_true",
                    help="re-measure from recorded raw JSONL; calls nothing, "
                         "fails loudly if a row is missing")

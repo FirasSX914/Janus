@@ -178,6 +178,45 @@ installed package does not carry, so it needs a clone. It says so plainly if the
 files are not there. `--replay` on its own works anywhere, on your own
 `--dataset` and `--raw-dir`.
 
+### `janus measure --log` — a decision log instead of a dataset
+
+`--dataset` needs a gold label. A decision log has none: it records what a
+decision model **answered** and how confident it was, never whether it was
+right. So this source measures an **agreement with a reference model, not a
+correctness**, and the report refuses to print any other word for it.
+
+```bash
+janus measure --log decisions.jsonl --labels verdicts.json   --reference deepseek:deepseek-v4-pro   --input-field command --decision-field verdict --confidence-field confidence
+```
+
+| flag | meaning |
+|---|---|
+| `--log` | JSONL of decisions already taken |
+| `--reference` | `provider:model` to compare against |
+| `--input-field` | field holding what the model saw (default `text`) |
+| `--decision-field` | field holding the decision (default `prediction`) |
+| `--confidence-field` | field holding the confidence (default `confidence`) |
+| `--id-field` | stable id; the line number otherwise |
+| `--output-tokens` | output tokens per call, for the estimate (default 638) |
+| `--yes` | skip the confirmation before spending |
+
+The defaults are the columns `janus measure` writes itself, so a Janus raw file
+replays as a log unchanged. Any other log is read by pointing the flags at the
+names it already uses — Janus renames nobody's log.
+
+It prints the cost before calling anything and asks before spending, then gives
+the agreement overall, per confidence tier with Wilson intervals, and the
+threshold / coverage / cost trade-off. Projected cost is the production one: in
+service the reference is called only on what is escalated.
+
+**The stratification by logged decision is not optional.** On 400 real decisions
+the two highest confidence tiers held one class and nothing else, so a high
+agreement there measured the class imbalance, not the confidence. At constant
+class the agreement still rose with confidence — but only the stratified view
+could show it, and without it the overall figure beat its own majority-class
+baseline by 0.5 points. The method is written up in
+[docs/METHOD_GATE.md](https://github.com/FirasSX914/Janus/blob/main/docs/METHOD_GATE.md).
+
 ### `janus check`
 
 Says whether the policy still applies: same statement, same resolved model
