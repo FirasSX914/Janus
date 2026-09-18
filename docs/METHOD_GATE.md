@@ -6,6 +6,22 @@ avant tout résultat. Rien ici n'est révisable après avoir vu les données ; s
 quelque chose doit changer, le changement est daté dans un commit séparé et la
 collecte repart de zéro.
 
+> ## ⚠ Ce run n'est pas reproductible
+>
+> Contrairement à Banking77 et à WOS, dont les datasets sont figés, commités et
+> rejouables par n'importe qui, **personne ne peut refaire ce run à
+> l'identique** — pas même nous.
+>
+> L'échantillon est extrait de transcripts privés qui ne sont pas publiés, et le
+> transcript principal **continue de grandir** : il est passé de 523 à 532
+> appels d'outils pendant l'écriture de ce protocole. Les observations brutes
+> sont dans `.gitignore` et n'entreront jamais dans le dépôt.
+>
+> Ce qui est publiable : le protocole, le code, et les chiffres agrégés. Ce qui
+> ne l'est pas : les données qui les produisent. **Cette limite accompagne le
+> résultat partout où il est cité**, au même niveau que lui, et le rapport de
+> `analyze_gate.py` l'imprime dans son en-tête.
+
 ## Question
 
 **La confiance de Jev prédit-elle son accord avec un modèle de référence, sur
@@ -13,6 +29,58 @@ une vraie décision d'agent ?**
 
 Si la relation est plate, la piste s'arrête. Le critère d'arrêt est fixé
 ci-dessous, avant les données.
+
+## Source des données — à lire avant tout résultat
+
+L'échantillon n'est **pas** du trafic d'agent en général. Il est rétrospectif,
+extrait de transcripts déjà existants, et il est étroit. Cette section a le même
+niveau de visibilité que le résultat, et l'accompagne partout où il est publié.
+
+Instantané du 2026-09-18.
+
+| source | sessions | appels extraits | retenus `JOIN_OK` | part |
+|---|---|---|---|---|
+| Janus (ce dépôt) | 1 | 532 | 504 | 88,6 % |
+| Tenor | 1 | 65 | 65 | 11,4 % |
+| **total** | **2** | **597** | **569** | |
+
+Les 28 exclusions sont toutes `JOIN_AMBIGUOUS`, concentrées sur **2**
+`prompt_id` portant chacun deux textes de tour distincts. Aucune `JOIN_MISSING` :
+la chaîne `parentUuid` aboutit dans 100 % des cas.
+
+1. **89 % de l'échantillon vient du développement de Janus lui-même** — un agent
+   qui écrit du Python dans un seul dépôt. La distribution est dominée par
+   `Bash`, `Edit`, `Read` et `Write` ; elle ne représente pas l'usage d'un agent
+   en général, ni même l'usage d'un autre dépôt.
+2. **La distribution des outils et celle des classes reflètent cet usage**, pas
+   une population. Aucun chiffre de ce protocole ne s'extrapole à « les agents »
+   ou « les appels d'outils » : il décrit ces 588 décisions, dans ces deux
+   dépôts, à cette date.
+3. **Vagus ne contient aucun transcript.** Le dossier existe dans
+   `~/.claude/projects/` mais ne porte qu'un sous-dossier `memory/` : aucune
+   session n'y a été enregistrée. Contribution : zéro.
+4. **Spikely n'a aucun dossier.** Aucune correspondance, ni exacte ni
+   approchée. Contribution : zéro.
+5. Chaque observation porte une colonne `source`. L'analyse rapporte **trois
+   vues** — Janus seul, Tenor seul, combiné. Si la relation entre confiance et
+   accord diffère entre les deux sources, c'est un résultat à part entière, pas
+   un bruit à moyenner.
+
+6. **Le transcript de Janus est vivant.** Il grandit pendant que cette
+   expérience est menée : `extract.py` relancé plus tard rendra un N différent.
+   Les chiffres publiés se rapportent à l'instantané daté ci-dessus, et le
+   fichier d'observations n'étant pas commité, **la reproduction exacte de ce N
+   n'est pas possible depuis le dépôt**. C'est une différence nette avec
+   Banking77 et WOS, dont les datasets sont figés et commités.
+7. **L'échantillon s'observe lui-même.** Une partie des appels d'outils de la
+   source Janus sont ceux qui ont servi à construire cette expérience —
+   extraction, jointure, écriture du protocole. Ils sont conservés, parce que
+   les retirer serait un filtrage post-hoc, mais la part `Bash` élevée s'en
+   trouve accentuée.
+
+Un échantillon étroit a été préféré à un échantillon trop petit : 65 décisions
+ne permettent pas au critère d'arrêt de tourner, 569 le permettent. Le prix en
+est cette section.
 
 ## Ce qui est mesuré
 
@@ -85,7 +153,7 @@ reçoit sur stdin : `session_id`, `prompt_id`, `transcript_path`, `cwd`,
 1. **La requête de l'utilisateur.** Elle n'est pas dans l'événement. Seul un
    `prompt_id` l'est. Le texte est récupéré après coup dans le transcript, par
    jointure sur `promptId` — clé vérifiée sur un transcript réel de ce dépôt
-   (562 lignes `user`, toutes porteuses d'un `promptId`).
+   (587 lignes `user`, toutes porteuses d'un `promptId`).
 2. **Le contexte interne de l'agent.** L'historique de la conversation, les
    résultats d'outils précédents, les fichiers déjà lus, `CLAUDE.md`, les règles
    de permission : rien de cela n'est dans la représentation. **Aucun des deux
@@ -148,12 +216,39 @@ le dépôt impose déjà que run et analyse soient séparés.
 | étape | fichier | appels API | sortie |
 |---|---|---|---|
 | 1. observer | `hook.py` (PreToolUse) | aucun | `results/raw/gate_observations.jsonl` |
+| 1 bis. extraire | `extract.py <projets>` | aucun | idem, avec une colonne `source` |
 | 2. résoudre | `resolve.py` | aucun | `gate_decisions.jsonl` + `gate_unresolved.jsonl` |
 | 3. interroger | `run_gate.py` | Jev + référence | `results/raw/gate_<modèle>.jsonl` |
 | 4. analyser | `analyze_gate.py` | aucun | le rapport |
 
 L'étape 1 écrit au fil de l'eau, une ligne par appel d'outil, flush et fsync
 immédiats. L'identifiant de reprise est `tool_use_id`, unique par appel.
+
+### Étape 1 bis — extraction rétrospective
+
+`extract.py` produit les mêmes observations que le hook, mais depuis des
+transcripts déjà écrits. La liste blanche de projets est un **argument
+obligatoire** : il n'existe aucune valeur par défaut, et rien en dehors d'elle
+n'est ouvert, pas même pour compter. Chaque observation porte sa `source`.
+
+**Correction du protocole — d'où vient le `prompt_id`.** Une version antérieure
+de ce document supposait qu'un appel d'outil portait son `prompt_id`. C'est vrai
+pour le hook, qui le reçoit dans l'événement `PreToolUse`. C'est **faux dans un
+transcript** : relevé sur un transcript réel de ce dépôt, `promptId` est présent
+sur les 587 lignes `user` et sur **zéro** des 1 046 lignes `assistant` — or ce
+sont les lignes `assistant` qui portent les blocs `tool_use`.
+
+`extract.py` remonte donc la chaîne `parentUuid` depuis le bloc `tool_use`
+jusqu'au premier tour utilisateur réel, et en prend le `promptId`. C'est une
+jointure **structurelle et déterministe** : elle suit le lien de parenté écrit
+dans le fichier, elle ne devine pas. Ce n'est en aucun cas le repli « dernier
+message utilisateur », qui reste interdit.
+
+Si la chaîne n'aboutit pas, l'observation sort avec `prompt_id` nul et
+`resolve.py` la classe `JOIN_MISSING` — l'échec reste visible et compté.
+
+Vérifié avant toute collecte : 523/523 sur Janus et 65/65 sur Tenor remontent
+jusqu'à un tour utilisateur ancré.
 
 ### Étape 2 — la jointure échoue explicitement
 
@@ -217,9 +312,13 @@ donc datée et le fichier est vidé avant le début officiel de la collecte.
 
 ### Rédaction et troncature
 
-Le fichier d'observations est destiné à être commité. Il contient des appels
-d'outils réels, donc potentiellement des chemins, du contenu de fichiers et des
-secrets. Avant écriture, le hook :
+Le fichier d'observations n'est **PAS** commité. Il contient des appels d'outils
+réels — chemins, contenu de fichiers, commandes — venant de dépôts qui ne sont
+pas publiés. `gate_*.jsonl` est dans `.gitignore` depuis avant la première
+extraction. **Seuls les résultats agrégés sont publiés.**
+
+La rédaction reste appliquée malgré tout, parce qu'un fichier non commité peut
+être lu, copié ou joint par erreur. Avant écriture, le hook comme `extract.py` :
 
 - remplace par `[REDACTED]` toute valeur littérale du `.env` d'au moins
   8 caractères, et les formes de jetons connues (`sk-…`, `ghp_…`, `pypi-…`,
@@ -227,9 +326,10 @@ secrets. Avant écriture, le hook :
 - tronque chaque valeur d'argument à 2 000 caractères, **en signalant la
   troncature dans la valeur**.
 
-Ce filtre n'est pas une garantie. **Le fichier est relu à la main avant tout
-commit**, et cette relecture est une étape du protocole, pas une précaution
-optionnelle.
+Ce filtre n'est pas une garantie — raison de plus pour que le fichier reste hors
+du dépôt. **Toute sortie destinée à la publication est relue avant commit**, et
+cette relecture est une étape du protocole, pas une précaution optionnelle : un
+rapport agrégé peut encore citer un cas de divergence, donc du contenu réel.
 
 La troncature n'est pas cosmétique : elle borne le coût, et la représentation
 canonique envoyée aux deux modèles est la version tronquée. La parité porte sur
@@ -263,6 +363,10 @@ By Jev confidence tier:
   <  0.80   n=...   ...% agreement  [..., ...]
 
 Secondary, CONFIRM subset only:   n=...   ...% agreement  [..., ...]
+
+Per source (Janus n=..., Tenor n=...):
+  <les mêmes lignes, une fois par source>
+
 
 Reference cost, total: $...   per decision: $...
 Theoretical saving at each threshold: ...

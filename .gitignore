@@ -7,3 +7,9 @@ build/
 dist/
 *.egg-info/
 .pytest_cache/
+
+# Observations brutes de l'experience "gate" : appels d'outils reels extraits
+# de transcripts. Elles contiennent du code, des chemins et des arguments de
+# projets qui ne sont pas publies. Seuls les resultats agreges sont commites.
+gate_*.jsonl
+gate_hook_errors.log
