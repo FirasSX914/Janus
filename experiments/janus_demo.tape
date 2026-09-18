@@ -9,6 +9,17 @@
 #   vhs experiments/janus_demo.tape
 #
 # Necessite vhs, ttyd et ffmpeg.
+#
+# LA CAPTURE DU README SORT DE CE MEME TOURNAGE.
+# results/figures/cli_measure.png est l'image de l'ecran Banking77, recadree
+# comme le GIF. Elle etait auparavant produite par un second moteur de rendu,
+# qui a fini par diverger : le README montrait un bloc VERDICT sans le cout ni
+# la latence pendant que le GIF montrait le nouveau. Une seule source, donc :
+#
+#   ffmpeg -y -i .vhs-frames/frame-text-00130.png -vf "crop=770:1006:0:3,pad=842:1078:36:36:color=0x12161c" results/figures/cli_measure.png
+#
+# Le numero de frame designe l'ecran Banking77 stabilise (110-150 ici) ; le
+# reverifier si les temporisations du tape changent.
 
 Output results/figures/janus_demo.gif
 # VHS 0.12.0 sous Windows capture les frames mais n'appelle jamais ffmpeg :
