@@ -43,7 +43,12 @@ JEV_MODEL = "jev-latest"
 JEV_USD_PER_MTOK = 0.042
 QUESTION_ID = "gate"
 PROGRESS_EVERY = 25
-DEFAULT_BUDGET = 0.50
+#: Releve de 0,50 a 0,60 le 2026-09-18 : le plafond initial avait ete fixe sur
+#: un estimateur qui comptait 30 tokens de sortie par decision au lieu des ~250
+#: reellement produits. Corriger un budget fonde sur une erreur de calcul n'est
+#: pas le relever parce que le resultat n'y tient pas -- N est inchange.
+#: Voir docs/METHOD_GATE.md.
+DEFAULT_BUDGET = 0.60
 #: Tokens de SORTIE par decision pour le modele de reference. Mesure sur un
 #: rodage de 3 decisions : 160, 375, 214, soit 250 en moyenne -- et non la
 #: trentaine qu'une reponse d'un seul label laisserait attendre. Le modele

@@ -475,7 +475,33 @@ seulement ce qu'un volume donné coûterait.
 | 500 | $0,320 | $0,639 |
 
 Crédit restant : ~0,94 $. Règle d'arrêt : **on ne lance pas si l'extrapolation
-dépasse 0,50 $**.
+dépasse 0,60 $**.
+
+### Correction du plafond, 2026-09-18 : 0,50 → 0,60 $
+
+L'estimateur initial comptait **30 tokens de sortie par décision**, la taille
+d'une réponse tenant en un label. Un rodage de 3 décisions en a mesuré 160, 375
+et 214, soit **~250** : le modèle de référence raisonne avant de répondre, et
+ces tokens de raisonnement sont facturés au tarif de sortie, où ils pèsent
+**59 % du coût**.
+
+L'estimation était donc fausse de moitié — le défaut qu'un garde-fou budgétaire
+ne peut pas avoir, puisqu'il aurait laissé démarrer un run que le protocole
+interdit. Avec le chiffre mesuré, les 569 décisions s'estiment à **0,5564 $**
+sans cache, contre ~0,476 $ en extrapolant le coût réel du rodage, cache
+compris.
+
+Le plafond passe à 0,60 $ **parce que le calcul qui l'avait fixé était faux**,
+pas parce que le résultat n'y tenait pas. La distinction est la règle du
+protocole : réduire N pour tenir un budget est interdit, corriger un budget
+fondé sur une erreur d'arithmétique ne l'est pas. **N n'a pas été touché** :
+les 569 décisions sont toutes traitées.
+
+**L'option écartée.** Couper le raisonnement du modèle de référence aurait
+supprimé 59 % du coût. Elle est rejetée : changer ce que « modèle de référence »
+désigne après avoir vu la facture serait exactement l'ajustement post-hoc que ce
+protocole interdit, et la contrainte de sortie en dépend — `tool_choice` forcé
+est refusé en mode thinking.
 
 Conséquence directe : **le run se fait en heures creuses uniquement**, où même
 500 décisions coûteraient 0,32 $. `run_gate.py` recalcule l'estimation sur les
