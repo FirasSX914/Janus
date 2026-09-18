@@ -38,11 +38,14 @@ niveau de visibilité que le résultat, et l'accompagne partout où il est publi
 
 Instantané du 2026-09-18.
 
-| source | sessions | appels extraits | retenus `JOIN_OK` | part |
-|---|---|---|---|---|
-| Janus (ce dépôt) | 1 | 532 | 504 | 88,6 % |
-| Tenor | 1 | 65 | 65 | 11,4 % |
-| **total** | **2** | **597** | **569** | |
+| source | sessions | appels extraits | retenus `JOIN_OK` |
+|---|---|---|---|
+| Janus (ce dépôt) | 1 | 532 | 504 |
+| Tenor | 1 | 65 | 65 |
+| **total** | **2** | **597** | **569** |
+
+**Sur ces 569, 400 sont mesurées** — N réduit par contrainte de budget, voir
+plus bas. Les résultats portent sur 400 décisions.
 
 Les 28 exclusions sont toutes `JOIN_AMBIGUOUS`, concentrées sur **2**
 `prompt_id` portant chacun deux textes de tour distincts. Aucune `JOIN_MISSING` :
@@ -190,6 +193,40 @@ telle. On ne prolonge pas une collecte, on ne force pas d'activité, on ne
 rejoue pas une session pour gonfler un effectif : fabriquer N pour obtenir une
 conclusion, c'est choisir la conclusion. Un N trop faible se rapporte
 `inconclusive` — ce qui est un résultat, et le seul honnête à ce moment-là.
+
+### N = 400, fixé par contrainte de budget — et ce que ça contredit
+
+**597** appels d'outils extraits → **569** `JOIN_OK` → **400** retenus pour la
+mesure d'accord. **Les résultats portent sur 400 décisions**, pas sur 569.
+
+La cause est le budget, et il faut l'écrire sans l'habiller : mesurer les 569
+aurait coûté ~0,88 $ sur ~0,94 $ de crédit DeepSeek. **C'est exactement ce que
+la règle ci-dessus interdit** — « le budget ne sert jamais d'argument pour
+réduire N ». La règle a été enfreinte, en connaissance de cause, et l'arbitrage
+est consigné ici plutôt que dissimulé : soit 400 décisions mesurées, soit un
+crédit épuisé, soit aucune mesure d'accord du tout.
+
+Conséquence à ne pas perdre de vue : **569 est le N que le protocole aurait dû
+mesurer**. Les 169 décisions écartées ne le sont pas pour une raison
+méthodologique, et leur absence n'est pas neutre — elle réduit la puissance de
+chaque palier.
+
+### Comment les 400 sont choisies
+
+Les **76** décisions déjà payées avant l'arrêt du run en font partie : leur
+`prompt_hash` a été vérifié égal au courant, leurs ids sont uniques, elles sont
+toutes dans les 569 et toutes couvertes par la passe Jev.
+
+Les **324** manquantes sont **tirées au hasard parmi les 493 restantes**,
+graine **20260918**. Jamais les 324 premières lignes : le fichier est ordonné
+par session puis par chronologie, en prendre la tête ordonnerait l'échantillon
+par le moment de la journée et par le sujet de la session.
+
+Les 76 premières, elles, ne sont pas un tirage aléatoire — ce sont les 76
+premières lignes du fichier. **L'échantillon des 400 est donc un mélange de
+76 décisions consécutives et de 324 tirées au hasard**, ce qui n'est pas un
+échantillon aléatoire simple des 569. La composition par source est rapportée
+pour que l'effet se voie.
 
 Conséquence à rapporter obligatoirement : la **part de la classe majoritaire**,
 qui est le niveau d'accord qu'atteindrait un modèle constant. Un accord global
@@ -477,6 +514,10 @@ seulement ce qu'un volume donné coûterait.
 Crédit restant : ~0,94 $. Règle d'arrêt : **on ne lance pas si l'extrapolation
 dépasse 0,60 $**.
 
+Coût réel mesuré sur 76 décisions : **0,00154 $ par décision**, dont **82 % de
+sortie**. Les 324 restantes s'estiment donc à **~0,50 $**, contre 0,569 $ en
+borne haute sans cache. Crédit disponible : ~0,82 $.
+
 ### Correction du plafond, 2026-09-18 : 0,50 → 0,60 $
 
 L'estimateur initial comptait **30 tokens de sortie par décision**, la taille
@@ -484,6 +525,13 @@ d'une réponse tenant en un label. Un rodage de 3 décisions en a mesuré 160, 3
 et 214, soit **~250** : le modèle de référence raisonne avant de répondre, et
 ces tokens de raisonnement sont facturés au tarif de sortie, où ils pèsent
 **59 % du coût**.
+
+**Cette seconde estimation était fausse elle aussi.** Mesurée ensuite sur 76
+décisions : médiane 364, **moyenne 638**, p90 1 282, **max 5 640**. Un rodage de
+trois lignes prises en tête de fichier ne pouvait pas voir cette queue, et c'est
+la moyenne qui détermine un coût total. La leçon est déjà dans le protocole pour
+les rodages de modèle — tirage aléatoire, graine documentée — et elle n'avait
+pas été appliquée au rodage de coût.
 
 L'estimation était donc fausse de moitié — le défaut qu'un garde-fou budgétaire
 ne peut pas avoir, puisqu'il aurait laissé démarrer un run que le protocole

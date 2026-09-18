@@ -26,6 +26,7 @@ import argparse
 import json
 import math
 import os
+import random
 import sys
 import time
 from datetime import datetime, timezone
@@ -49,13 +50,17 @@ PROGRESS_EVERY = 25
 #: pas le relever parce que le resultat n'y tient pas -- N est inchange.
 #: Voir docs/METHOD_GATE.md.
 DEFAULT_BUDGET = 0.60
-#: Tokens de SORTIE par decision pour le modele de reference. Mesure sur un
-#: rodage de 3 decisions : 160, 375, 214, soit 250 en moyenne -- et non la
-#: trentaine qu'une reponse d'un seul label laisserait attendre. Le modele
-#: raisonne avant de repondre, et ces tokens de raisonnement sont factures au
-#: tarif de sortie, ou ils pesent 59 % du cout. Une estimation qui les ignore
-#: sous-evalue le run de moitie et rend le plafond inoperant.
-REFERENCE_OUTPUT_TOKENS = 250
+#: Tokens de SORTIE par decision pour le modele de reference, mesures sur 76
+#: decisions reelles : mediane 364, MOYENNE 638, p90 1282, max 5640. Le modele
+#: raisonne avant de repondre et ces tokens sont factures au tarif de sortie,
+#: ou ils pesent 82 % du cout -- le cache d'entree n'y change presque rien.
+#:
+#: Deux estimations precedentes ont ete fausses ici. 30 tokens d'abord, ce qui
+#: sous-evaluait de moitie. Puis 250, moyenne d'un rodage de TROIS lignes prises
+#: en tete de fichier : trop peu et non tirees au hasard pour attraper une queue
+#: qui va jusqu'a 5640. C'est la moyenne qui compte pour un cout total, et elle
+#: demande un echantillon qui voie la queue.
+REFERENCE_OUTPUT_TOKENS = 638
 
 for line in (ROOT / ".env").read_text(encoding="utf-8").splitlines():
     if "=" in line and not line.lstrip().startswith("#"):
@@ -220,6 +225,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--model", choices=("jev", "reference"), required=True)
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--target-n", type=int, default=None,
+                        help="taille visee de l'echantillon mesure. Les lignes "
+                             "deja ecrites en font partie ; le complement est "
+                             "TIRE AU HASARD parmi les restantes (exige --seed).")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="graine du tirage, a documenter dans METHOD_GATE.md")
     parser.add_argument("--budget", type=float, default=DEFAULT_BUDGET,
                         help="plafond du modele de reference, en dollars")
     parser.add_argument("--estimate", action="store_true",
@@ -231,6 +242,24 @@ def main() -> None:
     out_path = RAW / f"gate_{args.model}.jsonl"
     done = already_done(out_path, digest)
     todo = [row for row in rows if row["id"] not in done]
+
+    if (args.target_n is None) != (args.seed is None):
+        parser.error("--target-n et --seed vont ensemble : un tirage sans graine "
+                     "documentee n'est pas reproductible.")
+    if args.target_n is not None:
+        need = args.target_n - len(done)
+        if need < 0:
+            parser.error(f"{len(done)} lignes deja ecrites depassent la cible "
+                         f"{args.target_n} : rien a tirer.")
+        if need > len(todo):
+            parser.error(f"cible {args.target_n} hors d'atteinte : {len(done)} "
+                         f"faites + {len(todo)} disponibles.")
+        # Tirage parmi les RESTANTES, jamais les premieres du fichier : prendre
+        # la tete ordonnerait l'echantillon par la chronologie des sessions.
+        todo = sorted(random.Random(args.seed).sample(todo, need),
+                      key=lambda row: row["id"])
+        print(f"tirage      : {need} parmi {len([r for r in rows if r['id'] not in done])} "
+              f"restantes, graine {args.seed}")
     if args.limit is not None:
         todo = todo[: args.limit]
 
