@@ -1,0 +1,12 @@
+{
+  "name": "janus",
+  "version": "0.3.0",
+  "description": "Agent skill for measuring confidence thresholds with janus-decide.",
+  "author": {
+    "name": "Firas Ayadi",
+    "url": "https://github.com/FirasSX914"
+  },
+  "homepage": "https://github.com/FirasSX914/Janus",
+  "repository": "https://github.com/FirasSX914/Janus",
+  "license": "MIT"
+}

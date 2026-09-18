@@ -1,0 +1,15 @@
+{
+  "name": "janus",
+  "description": "Measure where a confidence threshold belongs, before routing anything.",
+  "owner": {
+    "name": "Firas Ayadi",
+    "url": "https://github.com/FirasSX914"
+  },
+  "plugins": [
+    {
+      "name": "janus",
+      "description": "Measure routing thresholds from a labelled dataset or a decision log, with janus-decide",
+      "source": "./"
+    }
+  ]
+}

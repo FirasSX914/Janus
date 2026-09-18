@@ -130,6 +130,47 @@ When the models do change under you, `janus check` says so, and `Router` raises
 instead of quietly applying a threshold measured on something else. `janus explain`
 shows why one input escalated and another did not.
 
+## Use it from an agent
+
+An agent skill ships in this repository. With it installed, a coding agent can be
+asked directly:
+
+> Measure my thresholds with Janus.
+
+and will find the decision logs or labelled data already in the project, work out
+their format and the classes actually used, assemble the question from what the
+project states, estimate the cost, run the measurement, and read the report back.
+It will not invent a log, a label, a question or a number: when something needed
+is missing, it says which and stops.
+
+### Claude Code plugin
+
+```bash
+claude plugin marketplace add FirasSX914/Janus
+claude plugin install janus@janus
+```
+
+Invoke it explicitly with `/janus:janus-decide`.
+
+### Other agents via skills.sh
+
+```bash
+npx skills add FirasSX914/Janus --skill janus-decide
+```
+
+Select your agent when prompted. Installation is project-local by default; add
+`-g` to install globally.
+
+| Skill | Purpose |
+|---|---|
+| [janus-decide](https://github.com/FirasSX914/Janus/blob/main/skills/janus-decide/SKILL.md) | Find the project's decision logs or labelled data, measure the threshold, and report coverage, agreement and cost |
+
+The skill describes the commands and flags of the version it ships with and adds
+nothing to them. It reads
+[SKILL.md](https://github.com/FirasSX914/Janus/blob/main/skills/janus-decide/SKILL.md) as its
+instructions; the [raw Markdown](https://raw.githubusercontent.com/FirasSX914/Janus/main/skills/janus-decide/SKILL.md)
+can be fetched by an agent that installs skills another way.
+
 ## Why measure at all?
 
 The same pipeline was run on two labelled datasets, 500 examples each, and **no
