@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from . import labels as labels_mod
 from .measure import BudgetExceeded, measure
 from .policy import Policy, PolicyError
 from .providers.registry import PROVIDERS, resolve
+from .replay import OfflineProvider, TASKS, resolve_task, stage_artifacts
 from .router import Router
 from .types import Question
 
@@ -38,35 +40,94 @@ def _fingerprint(path: Path) -> dict:
             "dataset_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
 
 
+# ------------------------------------------------------------------- couleur
+#: Couleur seulement sur un vrai terminal, et jamais si NO_COLOR est pose.
+#: Rediriger la sortie dans un fichier doit rendre du texte, pas des sequences
+#: d'echappement : un rapport se relit et se diffe.
+#: NO_COLOR l'emporte sur FORCE_COLOR : desactiver doit toujours gagner.
+_COLOR = (os.environ.get("NO_COLOR") is None
+          and os.environ.get("TERM") != "dumb"
+          and (os.environ.get("FORCE_COLOR") not in (None, "", "0")
+               or sys.stdout.isatty()))
+
+
+def set_color(mode: str) -> None:
+    """auto | always | never. `auto` suit le terminal et NO_COLOR."""
+    global _COLOR
+    if mode == "always":
+        _COLOR = True
+    elif mode == "never":
+        _COLOR = False
+
+
+_CODES = {"dim": "2", "bold": "1", "green": "32", "red": "31",
+          "white": "97", "highlight": "1;97"}
+
+
+def _c(text: str, style: str) -> str:
+    return f"\033[{_CODES[style]}m{text}\033[0m" if _COLOR and style in _CODES else text
+
+
 def _fmt(value: float | None, suffix: str = "") -> str:
     return "unknown" if value is None or value != value else f"{value:.4f}{suffix}"
 
 
-def _delta(value: float | None, base: float | None) -> str:
-    """Ecart relatif a une baseline, en pourcentage signe.
+def _delta(value: float | None, base: float | None, *, lower_is_better: bool) -> str:
+    """Ecart relatif a une baseline, en pourcentage signe et colore.
+
+    `lower_is_better` dit dans quel sens va le gain : pour un cout ou une
+    latence, baisser est un gain ; pour une accuracy, monter en est un. Sans
+    cette distinction la couleur dirait l'inverse de ce qu'on lit.
 
     Rendu "n/a" plutot que 0 quand la baseline manque ou vaut zero : un ecart
     qu'on ne peut pas calculer ne doit pas s'afficher comme un ecart nul.
     """
     if value is None or base in (None, 0) or value != value or base != base:
-        return "n/a"
-    return f"{(value - base) / base:+.0%}"
+        return f"{'n/a':>7}"
+    ratio = (value - base) / base
+    gain = (ratio < 0) if lower_is_better else (ratio > 0)
+    return _c(f"{ratio:+.0%}".rjust(7), "green" if gain else "red")
+
+
+def _points(value: float, base: float, *, lower_is_better: bool = False) -> str:
+    """Ecart en points de pourcentage, colore de la meme facon."""
+    difference = value - base
+    gain = (difference < 0) if lower_is_better else (difference > 0)
+    return _c(f"{difference:+.1%}".rjust(7), "green" if gain else "red")
 
 
 # ------------------------------------------------------------------- measure
 def cmd_measure(args) -> int:
+    staged = None
+    if args.task:
+        # Raccourci vers les deux mesures commitees dans le depot. Il implique
+        # --replay : ces JSONL sont deja payes, les rejouer ne coute rien.
+        paths = resolve_task(args.task, Path.cwd())
+        args.dataset = paths["dataset"].relative_to(Path.cwd()).as_posix()
+        args.labels = args.labels or str(paths["labels"])
+        args.primary = args.primary or "typesafe:jev-latest"
+        args.fallback = args.fallback or "deepseek:deepseek-v4-pro"
+        args.replay = True
+        staged = stage_artifacts(paths["primary"], paths["fallback"])
+    for name in ("dataset", "primary", "fallback"):
+        if not getattr(args, name):
+            raise SystemExit(f"--{name} is required (or use --task)")
+
     question = _load_question(args)
     examples = [json.loads(line) for line
                 in Path(args.dataset).read_text(encoding="utf-8").splitlines()
                 if line.strip()]
     out = Path(args.out)
-    artifacts = Path(args.raw_dir) if args.raw_dir else out.with_suffix("") .parent / f"{out.stem}.artifacts"
+    artifacts = (staged if staged is not None else
+                 Path(args.raw_dir) if args.raw_dir else
+                 out.with_suffix("").parent / f"{out.stem}.artifacts")
 
     print(f"dataset   : {args.dataset}, {len(examples)} rows")
     print(f"question  : {len(question)} classes")
     print(f"primary   : {args.primary}")
     print(f"fallback  : {args.fallback}")
-    print(f"artifacts : {artifacts}")
+    print(_c("replay    : recorded JSONL only, no model is called", "dim")
+          if args.replay else f"artifacts : {artifacts}")
 
     if args.estimate:
         print("\n--estimate: no call is made. Run without it to measure.")
@@ -75,7 +136,10 @@ def cmd_measure(args) -> int:
     try:
         result = measure(
             examples=examples, question=question,
-            primary=resolve(args.primary), fallback=resolve(args.fallback),
+            primary=(OfflineProvider("typesafe", args.primary.split(":", 1)[-1])
+                     if args.replay else resolve(args.primary)),
+            fallback=(OfflineProvider("fallback", args.fallback.split(":", 1)[-1])
+                      if args.replay else resolve(args.fallback)),
             artifacts=artifacts, target_accuracy=args.target_accuracy,
             max_cost=args.max_cost, budget=args.budget,
             sample=args.sample, seed=args.seed,
@@ -86,8 +150,14 @@ def cmd_measure(args) -> int:
         return 2
 
     policy = result.policy
-    policy.write(out)
     _print_report(result, top=args.top)
+    if args.replay:
+        # Rejouer ne produit pas de politique : rien de neuf n'a ete mesure, et
+        # ecraser janus.json depuis une relecture serait trompeur.
+        print(_c("\nreplayed from recorded JSONL; nothing called, nothing written.",
+                 "dim"))
+        return 0
+    policy.write(out)
     print(f"\npolicy written to {out}")
     print(f"raw JSONL kept in {artifacts} - a policy should be auditable.")
     return 0
@@ -112,13 +182,16 @@ def _print_report(result, top: int | None = None) -> None:
     print("\n" + "=" * 68)
     print("OPERATING POINTS, one per observed confidence level")
     print("=" * 68)
-    print(f"  {'rule':<26} {'thr':>5} {'cov':>7} {'acc':>7} {'cost':>10} {'p50':>8}")
+    print(_c(f"  {'rule':<26} {'thr':>5} {'cov':>7} {'acc':>7} "
+             f"{'cost':>10} {'p50':>8}", "dim"))
 
-    def render(point) -> str:
+    def render(point, style: str = "white") -> str:
         threshold = "-" if point.threshold is None else f"{point.threshold:.2f}"
-        return (f"  {point.rule:<26} {threshold:>5} {point.coverage:>6.1%} "
-                f"{point.accuracy:>6.1%} {_fmt(point.cost_total):>10} "
-                f"{point.latency_p50_ms:>6.0f}ms")
+        # Les largeurs de l'en-tete et des valeurs sont les memes, sinon les
+        # colonnes se decalent d'un caractere et le tableau ment a l'oeil.
+        return _c(f"  {point.rule:<26} {threshold:>5} {point.coverage:>7.1%} "
+                  f"{point.accuracy:>7.1%} {_fmt(point.cost_total):>10} "
+                  f"{point.latency_p50_ms:>6.0f}ms", style)
 
     routed = [p for p in result.sweep if p.threshold is not None]
     # Le point qui porte la decision. Quand rien n'est route, c'est le meilleur
@@ -144,56 +217,69 @@ def _print_report(result, top: int | None = None) -> None:
         if point.threshold is None:          # always_primary / always_fallback
             print(render(point))
             continue
-        if routed.index(point) in shown:
+        index = routed.index(point)
+        if index in shown:
             if elided:
-                print(f"  ... {elided} more thresholds, written to the report")
+                print(_c(f"  ... {elided} more thresholds, written to the report", "dim"))
                 elided = 0
-            print(render(point))
+            print(render(point, "highlight" if index == chosen else "white"))
         else:
             elided += 1
     if elided:
-        print(f"  ... {elided} more thresholds, written to the report")
+        print(_c(f"  ... {elided} more thresholds, written to the report", "dim"))
 
     print("\n" + "=" * 68)
-    print(f"VERDICT: {result.verdict.upper().replace('_', ' ')}")
+    verdict = result.verdict.upper().replace("_", " ")
+    print(_c(f"VERDICT: {verdict}", "green" if policy.route else "red"))
     print("=" * 68)
 
     singles = {p.rule: p for p in result.sweep if p.threshold is None}
     primary_only = singles.get("always_primary")
     fallback_only = singles.get("always_fallback")
 
+    def row(label: str, value: str, delta: str = "", against: str = "") -> None:
+        """Une ligne = une info. Colonnes fixes : libelle, valeur, ecart."""
+        line = f"  {label:<12}: {value:>8}"
+        if delta:
+            line += f"  {delta}  {_c(against, 'dim')}"
+        elif against:
+            line += f"  {_c(against, 'dim')}"
+        print(line)
+
     if policy.route:
         point = next(p for p in routed if p.threshold == policy.threshold)
         # On route : la baseline qui compte est le modele qu'on evite d'appeler.
-        against, label = fallback_only, "fallback only"
+        base, label = fallback_only, "vs fallback only"
         best_single = max(primary_only.accuracy, fallback_only.accuracy)
-        print(f"  threshold  : {policy.threshold}")
-        print(f"  accuracy   : {point.accuracy:.1%}  "
-              f"({point.accuracy - best_single:+.1%} vs best single model)")
+        row("threshold", f"{policy.threshold:.2f}")
+        row("accuracy", f"{point.accuracy:.1%}",
+            _points(point.accuracy, best_single), "vs best single model")
     else:
         point = routed[chosen] if routed else None
         # On ne route pas : la baseline est le modele qui tourne seul.
-        against, label = primary_only, "always_primary"
+        base, label = primary_only, "vs always_primary"
         if point is not None:
-            print(f"  best routed point would be {point.threshold:.2f}")
-            print(f"  accuracy   : {point.accuracy:.1%}  "
-                  f"({point.accuracy - primary_only.accuracy:+.1%} vs {label})")
+            row("best routed", f"{point.threshold:.2f}", "", "would be the best case")
+            row("accuracy", f"{point.accuracy:.1%}",
+                _points(point.accuracy, primary_only.accuracy), label)
 
-    if point is not None and against is not None:
+    if point is not None and base is not None:
         money = "unknown" if point.cost_total is None else f"${point.cost_total:.4f}"
-        print(f"  cost       : {money}  "
-              f"({_delta(point.cost_total, against.cost_total)} vs {label})")
+        row("cost", money,
+            _delta(point.cost_total, base.cost_total, lower_is_better=True), label)
         if policy.route:
-            print(f"  latency p50: {point.latency_p50_ms:.0f}ms  "
-                  f"({_delta(point.latency_p50_ms, against.latency_p50_ms)} vs {label})")
-            print(f"  escalation : {1 - point.coverage:.1%} of traffic")
+            row("latency p50", f"{point.latency_p50_ms:.0f}ms",
+                _delta(point.latency_p50_ms, base.latency_p50_ms,
+                       lower_is_better=True), label)
+            row("escalation", f"{1 - point.coverage:.1%}", "", "of traffic")
 
-    print(f"  ceiling    : {policy.ceiling.get('oracle_accuracy', float('nan')):.1%} "
-          f"(this pair of models, not the task)")
+    row("ceiling", f"{policy.ceiling.get('oracle_accuracy', float('nan')):.1%}",
+        "", "this pair of models, not the task")
     if not policy.route:
-        print("\n  -> routing costs more for the same accuracy.")
-        print("  Routing was measured and did not pay here. That is a result, not a\n"
-              "  failure: the policy runs the better single model instead.")
+        print("\n  " + _c("-> routing costs more for the same accuracy.", "red"))
+        print(_c("  Routing was measured and did not pay here. That is a result,\n"
+                 "  not a failure: the policy runs the better single model instead.",
+                 "dim"))
 
 
 # --------------------------------------------------------------------- check
@@ -282,6 +368,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="janus",
         description="Measure a routing policy on your data, then run it.")
+    parser.add_argument("--color", choices=("auto", "always", "never"),
+                        default="auto",
+                        help="colourise the report; auto follows the terminal "
+                             "and NO_COLOR")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     def add_labels(sub):
@@ -291,11 +381,11 @@ def build_parser() -> argparse.ArgumentParser:
                               "ask for it explicitly.")
 
     m = subparsers.add_parser("measure", help="measure a policy and write janus.json")
-    m.add_argument("--dataset", required=True, help="JSONL: id, text, gold_label")
+    m.add_argument("--dataset", help="JSONL: id, text, gold_label")
     add_labels(m)
-    m.add_argument("--primary", required=True,
+    m.add_argument("--primary",
                    help=f"provider:model, one of {', '.join(PROVIDERS)}")
-    m.add_argument("--fallback", required=True, help="provider:model")
+    m.add_argument("--fallback", help="provider:model")
     m.add_argument("--out", default="janus.json")
     m.add_argument("--raw-dir", default=None,
                    help="override where the raw JSONL goes; written next to --out otherwise")
@@ -306,6 +396,12 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--seed", type=int, default=None)
     m.add_argument("--budget", type=float, default=None,
                    help="stop if the projected cost exceeds this")
+    m.add_argument("--replay", action="store_true",
+                   help="re-measure from recorded raw JSONL; calls nothing, "
+                        "fails loudly if a row is missing")
+    m.add_argument("--task", choices=sorted(TASKS), default=None,
+                   help="replay a measurement committed in the Janus "
+                        "repository; implies --replay")
     m.add_argument("--top", type=int, default=None,
                    help="show only N routed thresholds around the chosen one; "
                         "the full sweep always goes to the report")
@@ -329,6 +425,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    set_color(args.color)
     try:
         return args.func(args)
     except PolicyError as error:

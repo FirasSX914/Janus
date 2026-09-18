@@ -1,9 +1,10 @@
 # Demo janus : les deux verdicts a la suite. AUCUN appel API.
 #
-# La demo rejoue les JSONL commites. Les fournisseurs passes a measure() levent
-# une exception si on les appelle : le run n'aboutit que parce que les 500
-# lignes sont deja la. La commande affichee est reelle et lancable depuis un
-# clone du depot.
+# `--replay` rejoue les JSONL commites : les fournisseurs qu'il installe levent
+# une exception si on les appelle, donc le run n'aboutit que parce que les 500
+# lignes sont deja la, et il echoue bruyamment sinon. `--task` designe les deux
+# mesures commitees dans le depot. La commande affichee est la vraie, lancable
+# telle quelle depuis un clone.
 #
 #   vhs experiments/janus_demo.tape
 #
@@ -14,7 +15,9 @@ Output results/figures/janus_demo.gif
 # verifie avec un shim qui journalise les appels, le journal reste vide. On lui
 # fait donc ecrire aussi les frames, et on encode derriere :
 #
-#   ffmpeg -y -framerate 20 -i .vhs-frames/frame-text-%05d.png #     -filter_complex "[0:v]split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer" #     results/figures/janus_demo.gif
+#   ffmpeg -y -framerate 20 -i .vhs-frames/frame-text-%05d.png #     -filter_complex "[0:v]crop=1023:1030:0:0,split[a][b];#        [a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3" #     results/figures/janus_demo.gif
+#
+# Le crop retire l'espace mort sous la sortie la plus courte des deux.
 #
 # Sur une machine ou VHS emet le GIF lui-meme, la premiere ligne suffit.
 Output .vhs-frames/
@@ -25,7 +28,7 @@ Set Shell powershell
 Set FontFamily "Consolas"
 Set FontSize 20
 Set Width 1100
-Set Height 1010
+Set Height 1180
 Set Padding 24
 Set Framerate 20
 Set TypingSpeed 28ms
@@ -41,7 +44,7 @@ Sleep 2s
 Show
 
 # ---------------------------------------------------------------- Banking77
-Type "python experiments/replay_measure.py --task banking77 --top 1 --quiet"
+Type "janus --color always measure --replay --task banking77 --top 1"
 Sleep 400ms
 Enter
 Sleep 800ms
@@ -54,7 +57,7 @@ Sleep 400ms
 Show
 
 # --------------------------------------------------------- Web of Science
-Type "python experiments/replay_measure.py --task wos --top 1 --quiet"
+Type "janus --color always measure --replay --task wos --top 1"
 Sleep 400ms
 Enter
 Sleep 800ms
