@@ -44,6 +44,13 @@ JEV_USD_PER_MTOK = 0.042
 QUESTION_ID = "gate"
 PROGRESS_EVERY = 25
 DEFAULT_BUDGET = 0.50
+#: Tokens de SORTIE par decision pour le modele de reference. Mesure sur un
+#: rodage de 3 decisions : 160, 375, 214, soit 250 en moyenne -- et non la
+#: trentaine qu'une reponse d'un seul label laisserait attendre. Le modele
+#: raisonne avant de repondre, et ces tokens de raisonnement sont factures au
+#: tarif de sortie, ou ils pesent 59 % du cout. Une estimation qui les ignore
+#: sous-evalue le run de moitie et rend le plafond inoperant.
+REFERENCE_OUTPUT_TOKENS = 250
 
 for line in (ROOT / ".env").read_text(encoding="utf-8").splitlines():
     if "=" in line and not line.lstrip().startswith("#"):
@@ -230,7 +237,8 @@ def main() -> None:
     print(f"a traiter   : {len(todo)}  (~{tokens:,.0f} tokens d'entree)")
 
     if args.model == "reference":
-        estimate = tokens / 1e6 * 0.66 + len(todo) * 30 / 1e6 * 1.98
+        estimate = (tokens / 1e6 * 0.66
+                    + len(todo) * REFERENCE_OUTPUT_TOKENS / 1e6 * 1.98)
         print(f"estimation  : ${estimate:.4f} (sans cache, heures creuses) "
               f"| plafond ${args.budget:.2f}")
         if estimate > args.budget:
