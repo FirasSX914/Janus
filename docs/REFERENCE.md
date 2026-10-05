@@ -17,7 +17,7 @@ and writes a policy plus its report.
 | `--target-accuracy` | pick the cheapest point reaching it; reported as unattainable rather than revised |
 | `--max-cost` | discard points above this total |
 | `--sample N --seed S` | smoke test on N random rows; both flags are required together |
-| `--budget` | stop if the projected cost goes over |
+| `--budget` | stop if the projected cost goes over; refuse to start if a model has no price on file |
 | `--estimate` | print the plan, call nothing |
 | `--top N` | show only N routed thresholds around the chosen one; the full sweep still goes to the report |
 | `--replay` | re-measure from raw JSONL already recorded; calls nothing |

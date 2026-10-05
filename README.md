@@ -73,7 +73,8 @@ janus measure \
 
 Try `--sample 20 --seed 1` first: it checks the wiring and the real cost per call
 before you spend on the full set. `--budget 2.00` stops the run if the projected cost
-goes over. An interrupted run resumes by id without re-paying for a completed call.
+goes over, and refuses to start if a model has no price on file, since its cost could
+not be bounded. An interrupted run resumes by id without re-paying for a completed call.
 
 **4. Read the table.** This is the real output for the Banking77 data in this
 repository:
@@ -129,7 +130,8 @@ decision.cost_usd    # from real tokens; None when the rate is unknown
 
 Pin the resolved version here rather than an alias: an alias moves when a release
 ships, and a threshold measured on one version does not transfer to the next. Aliases
-are fine in `janus measure`, which records whatever the API actually answered.
+are fine in `janus measure`, which records whatever the API actually answered,
+unless you pass `--budget`: a budget needs a priced version to hold.
 
 When the models do change under you, `janus check` says so, and `Router` raises
 instead of quietly applying a threshold measured on something else. `janus explain`

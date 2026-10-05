@@ -58,6 +58,28 @@ def _done_ids(path: Path, expected_hash: str) -> set:
     return done
 
 
+def require_price(provider: Provider) -> None:
+    """Refuse un `--budget` qu'on ne saurait pas faire respecter.
+
+    Sans tarif, le cout de chaque appel vaut `None` et l'extrapolation ne
+    s'arme jamais : le plafond deviendrait silencieusement inerte. On le
+    verifie AVANT le premier appel, sur l'identifiant demande, en sondant le
+    fournisseur avec une reponse fictive a zero token -- aucun appel reseau.
+    """
+    probe = Answer(label="", model_id=provider.model,
+                   extra={"cache_hit_tokens": 0, "cache_miss_tokens": 0})
+    if provider.cost_usd(probe, datetime.now(timezone.utc)) is None:
+        raise BudgetExceeded(
+            f"--budget cannot be enforced: no price on file for "
+            f"{provider.name}/{provider.model}, so the run's cost cannot be "
+            "bounded. Pin a priced version, or drop --budget. No call was made.")
+
+
+def _todo(examples: Sequence[Mapping], question: Question, out_path: Path) -> list:
+    done = _done_ids(out_path, prompt_hash(question))
+    return [e for e in examples if e["id"] not in done]
+
+
 def run_provider(provider: Provider, examples: Sequence[Mapping], question: Question,
                  out_path: Path, *, budget: float | None = None,
                  progress: Callable[[str], None] = print) -> list[dict]:
@@ -65,6 +87,8 @@ def run_provider(provider: Provider, examples: Sequence[Mapping], question: Ques
     expected = prompt_hash(question)
     done = _done_ids(out_path, expected)
     todo = [e for e in examples if e["id"] not in done]
+    if budget is not None and todo:
+        require_price(provider)
     progress(f"  {provider.name}/{provider.model}: {len(done)} done, {len(todo)} to go")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -94,9 +118,17 @@ def run_provider(provider: Provider, examples: Sequence[Mapping], question: Ques
             handle.flush()
             os.fsync(handle.fileno())
 
+            if budget is not None and cost is None:
+                # L'identifiant demande avait un tarif, la version rendue non
+                # (un alias a bouge) ou la decoupe du cache manque. Continuer
+                # reviendrait a depenser sans plafond.
+                raise BudgetExceeded(
+                    f"--budget cannot be enforced: {provider.name} answered with "
+                    f"{answer.model_id}, whose cost cannot be computed. Stopped after "
+                    f"{index} call(s); the run resumes by id.")
             if cost is not None:
                 spent += cost
-            if budget is not None and index >= 10 and cost is not None:
+            if budget is not None and index >= 10:
                 projected = spent / index * len(todo)
                 if projected > budget:
                     raise BudgetExceeded(
@@ -149,6 +181,13 @@ def measure(*, examples: Sequence[Mapping], question: Question,
         examples = sorted(random.Random(seed).sample(list(examples), sample),
                           key=lambda e: e["id"])
         progress(f"  smoke test: {sample} rows, seed {seed}")
+
+    if budget is not None:
+        # Les deux fournisseurs AVANT le premier appel : sinon un repli sans
+        # tarif ne serait decouvert qu'apres avoir paye tout le primaire.
+        for provider, name in ((primary, "primary.jsonl"), (fallback, "fallback.jsonl")):
+            if _todo(examples, question, artifacts / name):
+                require_price(provider)
 
     artifacts.mkdir(parents=True, exist_ok=True)
     primary_rows = run_provider(primary, examples, question,
