@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from ..cost import cost_of, pricing_tier
 from ..types import Answer, Question
@@ -129,5 +129,5 @@ class DeepSeekProvider(OpenAICompatProvider):
         # Le regime tarifaire de l'heure reelle de l'appel, consigne pour que le
         # cout d'une ligne soit recalculable depuis la ligne seule.
         extra = dict(answer.extra)
-        extra["pricing_tier"] = pricing_tier(answer.model_id, datetime.now().astimezone())
+        extra["pricing_tier"] = pricing_tier(answer.model_id, datetime.now(timezone.utc))
         return Answer(**{**answer.__dict__, "extra": extra})
