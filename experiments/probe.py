@@ -9,7 +9,8 @@ from pathlib import Path
 
 from typesafe_sdk import Choice, TypeSafeClient
 
-for line in (Path(__file__).resolve().parent.parent / ".env").read_text().splitlines():
+_ENV = Path(__file__).resolve().parent.parent / ".env"
+for line in (_ENV.read_text().splitlines() if _ENV.exists() else []):
     if "=" in line and not line.lstrip().startswith("#"):
         name, value = line.split("=", 1)
         os.environ.setdefault(name.strip(), value.strip())
