@@ -228,6 +228,10 @@ def cmd_measure_log(args) -> int:
     model = args.reference.split(":", 1)[-1]
     rates = _rates(model)
     if rates is None:
+        if args.budget is not None:
+            raise SystemExit(f"refusing to start: no price on file for {model}, "
+                             "so --budget cannot be enforced. Pin a priced "
+                             "version, or drop --budget.")
         print(_c(f"\nNo price on file for {model}: the run cannot be estimated, "
                  "and its cost will be reported as unknown rather than as zero.", "dim"))
         tokens = None
