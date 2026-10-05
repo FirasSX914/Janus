@@ -62,7 +62,8 @@ DEFAULT_BUDGET = 0.60
 #: demande un echantillon qui voie la queue.
 REFERENCE_OUTPUT_TOKENS = 638
 
-for line in (ROOT / ".env").read_text(encoding="utf-8").splitlines():
+_ENV = ROOT / ".env"
+for line in (_ENV.read_text(encoding="utf-8").splitlines() if _ENV.exists() else []):
     if "=" in line and not line.lstrip().startswith("#"):
         name, value = line.split("=", 1)
         os.environ.setdefault(name.strip(), value.strip())
